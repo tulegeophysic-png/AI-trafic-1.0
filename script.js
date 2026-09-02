@@ -77,13 +77,20 @@ function updateConfidence(val) {
 async function loadModel() {
     try {
         setStatus('waiting', 'LOADING MODEL...');
-        session = await ort.InferenceSession.create('./model/yolov10n.onnx', {
+        
+        // ⚠️ QUAN TRỌNG: Thay đổi tên file 'yolov10s.onnx' bên dưới 
+        // thành tên chính xác file YOLOv10 mà bạn đang đặt trong thư mục model/ trên GitHub
+        // (Ví dụ: 'yolov10.onnx', 'yolov10s.onnx', 'yolov10m.onnx'...)
+        const modelFileName = 'yolov10s.onnx'; 
+
+        session = await ort.InferenceSession.create(`./model/${modelFileName}`, {
             executionProviders: ['webgpu', 'wasm']
         });
         setStatus('active', 'AI READY');
     } catch (e) {
         console.error("Model load failed:", e);
         setStatus('error', 'AI ERROR – MODEL LOAD FAILED');
+        alert("Không thể tải file model YOLOv10. Vui lòng kiểm tra lại tên file trong thư mục model/ và kết nối mạng!");
     }
 }
 loadModel();
@@ -100,7 +107,7 @@ async function startAI() {
         return;
     }
     if (!session) {
-        alert("Model YOLOv10 chưa được tải xong hoặc lỗi!");
+        alert("Model YOLOv10 chưa được tải xong hoặc lỗi đường dẫn file!");
         return;
     }
     isRunning = true;
@@ -150,7 +157,6 @@ async function processFrame() {
         lastTime = now;
     }
 
-    // Draw video frame to canvas
     ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
 
     try {
@@ -183,9 +189,9 @@ function preprocessToBlob(sourceCanvas) {
     const float32Data = new Float32Array(3 * targetSize * targetSize);
 
     for (let i = 0; i < targetSize * targetSize; i++) {
-        float32Data[i] = data[i * 4] / 255.0;                      // R
-        float32Data[targetSize * targetSize + i] = data[i * 4 + 1] / 255.0;      // G
-        float32Data[2 * targetSize * targetSize + i] = data[i * 4 + 2] / 255.0;  // B
+        float32Data[i] = data[i * 4] / 255.0;                      
+        float32Data[targetSize * targetSize + i] = data[i * 4 + 1] / 255.0;      
+        float32Data[2 * targetSize * targetSize + i] = data[i * 4 + 2] / 255.0;  
     }
     return new ort.Tensor('float32', float32Data, [1, 3, targetSize, targetSize]);
 }
@@ -265,7 +271,6 @@ function updateTrackingAndCounting(detections, frameHeight) {
 function drawDetections(detections) {
     const countingLineY = canvas.height * 0.7;
 
-    // Draw Counting Line
     ctx.strokeStyle = '#ef4444';
     ctx.lineWidth = 3;
     ctx.beginPath();
@@ -277,7 +282,6 @@ function drawDetections(detections) {
     ctx.font = 'bold 16px Segoe UI';
     ctx.fillText('COUNTING LINE', 20, countingLineY - 10);
 
-    // Draw Bounding Boxes & IDs
     tracks.forEach(track => {
         const [x, y, w, h] = track.bbox;
         ctx.strokeStyle = getCategoryColor(track.className);
@@ -310,7 +314,6 @@ function updateUIStats() {
     document.getElementById('count-truck').innerText = counts.truck;
     document.getElementById('count-total').innerText = counts.total;
 
-    // Traffic Density & Congestion Warning
     const activeVehicles = tracks.length;
     let density = 'LOW';
     let densityClass = 'low';
@@ -331,7 +334,6 @@ function updateUIStats() {
     densityBadge.className = `density-badge ${densityClass}`;
     densityBadge.innerText = density;
 
-    // Update Chart
     if (chartInstance) {
         chartInstance.data.datasets[0].data = [counts.car, counts.motorcycle, counts.bus, counts.truck];
         chartInstance.update();
