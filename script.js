@@ -1,4 +1,4 @@
-// Đồng hồ thời gian thực[cite: 1]
+// Đồng hồ thời gian thực
 setInterval(() => {
     document.getElementById('clock').innerText = new Date().toLocaleTimeString();
 }, 1000);
@@ -16,7 +16,12 @@ let modelLoaded = false;
 let lastTime = performance.now();
 let frameCount = 0;
 
-// Xử lý khi người dùng chọn file video[cite: 1]
+// Biến toàn cục quản lý danh sách xe đang được tracking và chống nhảy số
+let trackedObjects = [];
+let nextTrackId = 1;
+const MAX_MISSING_FRAMES = 5; // Số frame tối đa cho phép mất dấu trước khi xóa xe
+
+// Xử lý khi người dùng chọn file video
 fileInput.addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (file) {
@@ -25,7 +30,9 @@ fileInput.addEventListener('change', function(e) {
         videoElem.src = videoUrl;
         videoElem.load();
         videoElem.onloadeddata = () => {
-            ctx.drawImage(videoElem, 0, 0, canvasElem.width, canvasElem.height);
+            // Ép hiển thị frame đầu tiên lên canvas
+            videoElem.play();
+            setTimeout(() => videoElem.pause(), 100);
             updateStatus("AI READY", "waiting");
         };
     }
@@ -42,7 +49,6 @@ async function loadYOLOModel() {
     try {
         updateStatus("Đang tải Model YOLOv10...", "waiting");
         
-        // Đã sửa đường dẫn trỏ đúng vào file yolov10.onnx nằm cùng cấp
         const modelUrl = "./yolov10.onnx"; 
         
         session = await ort.InferenceSession.create(modelUrl, { executionProviders: ['webgl', 'wasm'] });
@@ -79,7 +85,7 @@ function stopAI() {
     updateStatus("AI STOPPED", "stopped");
 }
 
-// Vòng lặp xử lý từng khung hình video[cite: 1]
+// Vòng lặp xử lý từng khung hình video
 async function runAIFrame() {
     if (!aiRunning || videoElem.paused || videoElem.ended) {
         if (videoElem.ended) {
@@ -89,7 +95,7 @@ async function runAIFrame() {
         return;
     }
 
-    // Tính toán FPS[cite: 1]
+    // Tính toán FPS
     let now = performance.now();
     frameCount++;
     if (now - lastTime >= 1000) {
@@ -98,22 +104,22 @@ async function runAIFrame() {
         lastTime = now;
     }
 
-    // Vẽ frame hiện tại từ video lên canvas[cite: 1]
+    // Vẽ frame hiện tại từ video lên canvas
     ctx.drawImage(videoElem, 0, 0, canvasElem.width, canvasElem.height);
 
     try {
-        // 1. Tiền xử lý ảnh cho YOLOv10 (Scale về 640x640, chuẩn hóa RGB [0-1])[cite: 1]
+        // 1. Tiền xử lý ảnh cho YOLOv10 (Scale về 640x640, chuẩn hóa RGB [0-1])
         const inputTensor = preprocessImage(canvasElem);
         
-        // 2. Chạy suy luận qua ONNX Runtime[cite: 1]
+        // 2. Chạy suy luận qua ONNX Runtime
         const feeds = { images: inputTensor };
         const results = await session.run(feeds);
         const output = results[Object.keys(results)[0]];
 
-        // 3. Phân tích kết quả đầu ra của YOLOv10 (Đã tích hợp sẵn NMS, xuất ra tensor gọn [300, 6])[cite: 1]
+        // 3. Phân tích kết quả đầu ra kết hợp Tracking và Buffer mượt số lượng
         const detections = parseYOLOv10Output(output.data, canvasElem.width, canvasElem.height);
 
-        // 4. Vẽ bounding box và cập nhật thống kê[cite: 1]
+        // 4. Vẽ bounding box và tên đối tượng lên màn hình
         renderDetections(detections);
 
     } catch (err) {
@@ -125,7 +131,7 @@ async function runAIFrame() {
     }
 }
 
-// Hàm tiền xử lý đưa canvas về Tensor [1, 3, 640, 640][cite: 1]
+// Hàm tiền xử lý đưa canvas về Tensor [1, 3, 640, 640]
 function preprocessImage(srcCanvas) {
     let tempCanvas = document.createElement('canvas');
     tempCanvas.width = 640;
@@ -153,17 +159,13 @@ function preprocessImage(srcCanvas) {
     return new ort.Tensor('float32', floatData, [1, 3, 640, 640]);
 }
 
-// Xử lý ma trận đầu ra YOLOv10 (Cấu trúc đặc thù của YOLOv10: 300 dòng, mỗi dòng chứa [x1, y1, x2, y2, score, class_id])[cite: 1]
+// Xử lý ma trận đầu ra YOLOv10 kết hợp thuật toán Tracking & Smoothing để chống nhảy số
 function parseYOLOv10Output(outputData, origW, origH) {
-    let boxes = [];
-    let counts = { car: 0, motorcycle: 0, bus: 0, truck: 0 };
-
-    // ID trong tập COCO dataset: 2: car, 3: motorcycle, 5: bus, 7: truck[cite: 1]
-    const targetClasses = { 2: 'Car', 3: 'Motorcycle', 5: 'Bus', 7: 'Truck' };
-    
-    // YOLOv10 xuất ra mảng phẳng chứa 300 bounding box (mỗi box gồm 6 giá trị)[cite: 1]
+    let rawBoxes = [];
     let numBoxes = outputData.length / 6;
+    const targetClasses = { 2: 'Car', 3: 'Motorcycle', 5: 'Bus', 7: 'Truck' };
 
+    // Hạ ngưỡng confidence xuống 0.35 để bắt xe máy tốt hơn
     for (let i = 0; i < numBoxes; i++) {
         let offset = i * 6;
         let x1_norm = outputData[offset + 0];
@@ -173,48 +175,101 @@ function parseYOLOv10Output(outputData, origW, origH) {
         let score = outputData[offset + 4];
         let classId = Math.round(outputData[offset + 5]);
 
-        // Ngưỡng tin cậy (Confidence threshold = 0.45) và lọc đúng các class phương tiện giao thông[cite: 1]
-        if (score > 0.30 && targetClasses[classId]) {
-            // Quy đổi tọa độ chuẩn hóa về kích thước thực của video gốc[cite: 1]
+        if (score > 0.35 && targetClasses[classId]) {
             let x1 = x1_norm * (origW / 640);
             let y1 = y1_norm * (origH / 640);
             let x2 = x2_norm * (origW / 640);
             let y2 = y2_norm * (origH / 640);
 
-            let label = targetClasses[classId];
-            if (classId === 2) counts.car++;
-            else if (classId === 3) counts.motorcycle++;
-            else if (classId === 5) counts.bus++;
-            else if (classId === 7) counts.truck++;
-
-            boxes.push({ box: [x1, y1, x2, y2], score: score, class: label });
+            rawBoxes.push({ box: [x1, y1, x2, y2], score: score, class: targetClasses[classId] });
         }
     }
 
-    // Cập nhật giao diện Dashboard đếm số lượng[cite: 1]
-    document.getElementById('count-car').innerText = counts.car;
-    document.getElementById('count-moto').innerText = counts.motorcycle;
-    document.getElementById('count-bus').innerText = counts.bus;
-    document.getElementById('count-truck').innerText = counts.truck;
-    document.getElementById('count-total').innerText = counts.car + counts.motorcycle + counts.bus + counts.truck;
+    let currentDetections = [];
 
-    return boxes;
+    // Thuật toán IoU Tracker đơn giản gắn ID qua các frame
+    rawBoxes.forEach(det => {
+        let [x1, y1, x2, y2] = det.box;
+        let cx = (x1 + x2) / 2;
+        let cy = (y1 + y2) / 2;
+        
+        let matchedTrack = null;
+        let minDistance = 60; // Khoảng cách pixel tối đa để nhận diện là cùng một xe
+
+        for (let track of trackedObjects) {
+            let [tx1, ty1, tx2, ty2] = track.box;
+            let tcx = (tx1 + tx2) / 2;
+            let tcy = (ty1 + ty2) / 2;
+            let distance = Math.hypot(cx - tcx, cy - tcy);
+
+            if (distance < minDistance && track.class === det.class) {
+                minDistance = distance;
+                matchedTrack = track;
+            }
+        }
+
+        if (matchedTrack) {
+            matchedTrack.box = det.box;
+            matchedTrack.score = det.score;
+            matchedTrack.missingFrames = 0;
+            currentDetections.push(matchedTrack);
+        } else {
+            let newTrack = {
+                id: nextTrackId++,
+                box: det.box,
+                score: det.score,
+                class: det.class,
+                missingFrames: 0
+            };
+            trackedObjects.push(newTrack);
+            currentDetections.push(newTrack);
+        }
+    });
+
+    // Giữ lại các xe bị mất dấu tạm thời trong vài frame (tránh sụt giảm số lượng đột ngột)
+    trackedObjects.forEach(track => {
+        if (!currentDetections.includes(track)) {
+            track.missingFrames++;
+            if (track.missingFrames < MAX_MISSING_FRAMES) {
+                currentDetections.push(track);
+            }
+        }
+    });
+
+    trackedObjects = trackedObjects.filter(track => track.missingFrames < MAX_MISSING_FRAMES);
+
+    // Thống kê số lượng phương tiện ổn định theo danh sách tracking
+    let counts = { Car: 0, Motorcycle: 0, Bus: 0, Truck: 0 };
+    currentDetections.forEach(item => {
+        if (counts[item.class] !== undefined) {
+            counts[item.class]++;
+        }
+    });
+
+    // Cập nhật giao diện Dashboard đếm số lượng
+    document.getElementById('count-car').innerText = counts.Car;
+    document.getElementById('count-moto').innerText = counts.Motorcycle;
+    document.getElementById('count-bus').innerText = counts.Bus;
+    document.getElementById('count-truck').innerText = counts.Truck;
+    document.getElementById('count-total').innerText = counts.Car + counts.Motorcycle + counts.Bus + counts.Truck;
+
+    return currentDetections;
 }
 
-// Vẽ bounding box và tên đối tượng lên màn hình canvas[cite: 1]
+// Vẽ bounding box và tên đối tượng lên màn hình canvas
 function renderDetections(boxes) {
     ctx.drawImage(videoElem, 0, 0, canvasElem.width, canvasElem.height);
 
     boxes.forEach(item => {
         let [x1, y1, x2, y2] = item.box;
         
-        // Vẽ khung Bounding Box[cite: 1]
+        // Vẽ khung Bounding Box
         ctx.strokeStyle = '#22c55e';
         ctx.lineWidth = 3;
         ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
 
-        // Vẽ nhãn tên đối tượng & độ tin cậy[cite: 1]
-        let text = `${item.class} (${Math.round(item.score * 100)}%)`;
+        // Vẽ nhãn tên đối tượng, ID & độ tin cậy
+        let text = `${item.class} #${item.id} (${Math.round(item.score * 100)}%)`;
         ctx.font = '12px Segoe UI, sans-serif';
         let textWidth = ctx.measureText(text).width;
 
