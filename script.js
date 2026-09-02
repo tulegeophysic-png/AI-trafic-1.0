@@ -174,7 +174,7 @@ function parseYOLOv10Output(outputData, origW, origH) {
         let classId = Math.round(outputData[offset + 5]);
 
         // Ngưỡng tin cậy (Confidence threshold = 0.45) và lọc đúng các class phương tiện giao thông[cite: 1]
-        if (score > 0.45 && targetClasses[classId]) {
+        if (score > 0.30 && targetClasses[classId]) {
             // Quy đổi tọa độ chuẩn hóa về kích thước thực của video gốc[cite: 1]
             let x1 = x1_norm * (origW / 640);
             let y1 = y1_norm * (origH / 640);
