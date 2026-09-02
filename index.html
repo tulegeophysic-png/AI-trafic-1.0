@@ -3,72 +3,104 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI TRAFFIC – NHẬN DIỆN VÀ ĐẾM PHƯƠNG TIỆN GIAO THÔNG</title>
+    <title>AI TRAFFIC – YOLOv10 TRAFFIC MONITORING</title>
     <link rel="stylesheet" href="style.css">
-    <!-- Tích hợp ONNX Runtime Web từ CDN -->
+    <!-- ONNX Runtime Web -->
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="app-container">
-        <!-- HEADER -->
         <header class="app-header">
-            <h1>AI TRAFFIC – NHẬN DIỆN VÀ ĐẾM PHƯƠNG TIỆN GIAO THÔNG</h1>
+            <h1>AI TRAFFIC – YOLOv10 NHẬN DIỆN & ĐẾM PHƯƠNG TIỆN GIAO THÔNG</h1>
             <div class="header-meta">
                 <div class="meta-item">🕒 <span id="clock">00:00:00</span></div>
-                <div class="meta-item">⚡ FPS: <span id="fps-display">0</span></div>
-                <div class="meta-item">Trạng thái: <span id="system-status" class="status-badge waiting">AI READY</span></div>
+                <div class="meta-item">⚡ FPS: <span id="fps-display">0.0</span></div>
+                <div class="meta-item">AI Status: <span id="system-status" class="status-badge waiting">AI READY</span></div>
+                <div class="meta-item">Mật độ: <span id="density-status" class="density-badge low">LOW</span></div>
             </div>
+            <div id="congestion-banner" class="congestion-banner normal">✓ TRAFFIC NORMAL</div>
         </header>
 
-        <!-- MAIN DASHBOARD GRID -->
         <div class="dashboard-grid">
-            <!-- VIDEO CONTAINER & CONTROLS -->
             <div class="card video-card">
-                <div class="card-title">📹 Video Giao Thông & Khung Nhận Diện AI</div>
+                <div class="card-title">📹 Video Giao Thông & Khung Nhận Diện AI (YOLOv10)</div>
                 <div class="video-container">
-                    <video id="video-source" muted playsinline style="display:none;"></video>
-                    <canvas id="canvas" width="640" height="480"></canvas>
+                    <video id="video-source" muted playsinline crossorigin="anonymous"></video>
+                    <canvas id="canvas"></canvas>
                 </div>
                 
                 <div class="file-input-wrapper">
-                    <label for="upload-video" class="btn btn-file">📁 Chọn Video</label>
+                    <label for="upload-video" class="btn btn-file">📁 Chọn Video Giao Thông</label>
                     <input type="file" id="upload-video" accept="video/*">
                     <span id="file-name" class="file-name">Chưa chọn file nào</span>
                 </div>
 
                 <div class="control-panel">
                     <button id="btn-start" class="btn btn-success" onclick="startAI()">START AI</button>
-                    <button id="btn-stop" class="btn btn-danger" onclick="stopAI()">STOP</button>
+                    <button id="btn-stop" class="btn btn-danger" onclick="stopAI()" disabled>STOP</button>
+                    <button id="btn-reset" class="btn btn-warning" onclick="resetSystem()">RESET</button>
+                    <button id="btn-capture" class="btn btn-info" onclick="captureFrame()" disabled>CAPTURE</button>
+                </div>
+
+                <div class="settings-panel">
+                    <label>Confidence Threshold: <span id="conf-val">0.50</span></label>
+                    <input type="range" id="conf-slider" min="0.1" max="0.9" step="0.05" value="0.50" oninput="updateConfidence(this.value)">
                 </div>
             </div>
 
-            <!-- STATS PANEL -->
             <div class="card stats-card">
-                <div class="card-title">📊 Thống Kê Số Lượng Phương Tiện</div>
+                <div class="card-title">📊 Thống Kê Theo Dõi Thời Gian Thực</div>
                 <div class="stat-item car">
-                    <span class="label">🚗 Ô tô (Car)</span>
+                    <span class="label">🚗 Car</span>
                     <span class="value" id="count-car">0</span>
                 </div>
                 <div class="stat-item moto">
-                    <span class="label">🏍 Xe máy (Motorcycle)</span>
+                    <span class="label">🏍 Motorcycle</span>
                     <span class="value" id="count-moto">0</span>
                 </div>
                 <div class="stat-item bus">
-                    <span class="label">🚌 Xe buýt (Bus)</span>
+                    <span class="label">🚌 Bus</span>
                     <span class="value" id="count-bus">0</span>
                 </div>
                 <div class="stat-item truck">
-                    <span class="label">🚚 Xe tải (Truck)</span>
+                    <span class="label">🚚 Truck</span>
                     <span class="value" id="count-truck">0</span>
                 </div>
                 <div class="stat-item total">
-                    <span class="label">📈 Tổng Số Lượng (Total)</span>
+                    <span class="label">📈 TOTAL COUNT</span>
                     <span class="value" id="count-total">0</span>
                 </div>
             </div>
         </div>
-    </div>
 
+        <div class="analytics-grid">
+            <div class="card">
+                <div class="card-title">📈 Biểu Đồ Thống Kê Phương Tiện</div>
+                <div class="chart-container">
+                    <canvas id="trafficChart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-title">⚙️ Thông Tin Phân Tích & Tốc Độ</div>
+                <div class="analytics-content">
+                    <div class="analytic-row">
+                        <span>Trạng thái Tracking:</span>
+                        <strong id="tracking-status">Active (IoU Tracker)</strong>
+                    </div>
+                    <div class="analytic-row">
+                        <span>Counting Line Y:</span>
+                        <strong>70% chiều cao khung hình</strong>
+                    </div>
+                    <div class="analytic-row speed-warning">
+                        <span>⚠️ Cảnh báo tốc độ:</span>
+                        <span>SPEED ESTIMATION REQUIRES CAMERA CALIBRATION</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     <script src="script.js"></script>
 </body>
 </html>
