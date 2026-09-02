@@ -80,15 +80,37 @@ async function loadModel() {
         
         // ⚠️ QUAN TRỌNG: Thay đổi tên file 'yolov10s.onnx' bên dưới 
         // thành tên chính xác file YOLOv10 mà bạn đang đặt trong thư mục model/ trên GitHub
-        // (Ví dụ: 'yolov10.onnx', 'yolov10s.onnx', 'yolov10m.onnx'...)
         const modelFileName = 'yolov10s.onnx'; 
 
-        session = await ort.InferenceSession.create(`./model/${modelFileName}`, {
-            executionProviders: ['webgpu', 'wasm']
-        });
+        // Danh sách các đường dẫn dự phòng để tránh lỗi 404 trên GitHub Pages
+        const modelPaths = [
+            `./model/${modelFileName}`,
+            `model/${modelFileName}`,
+            `./${modelFileName}`
+        ];
+
+        for (let path of modelPaths) {
+            try {
+                console.log("Đang thử tải model từ đường dẫn:", path);
+                session = await ort.InferenceSession.create(path, {
+                    executionProviders: ['webgpu', 'wasm']
+                });
+                if (session) {
+                    console.log("Tải model thành công từ:", path);
+                    break;
+                }
+            } catch (innerErr) {
+                console.warn("Không thể tải từ đường dẫn:", path, innerErr);
+            }
+        }
+
+        if (!session) {
+            throw new Error("Không tìm thấy file model ở tất cả các đường dẫn thử nghiệm.");
+        }
+
         setStatus('active', 'AI READY');
     } catch (e) {
-        console.error("Model load failed:", e);
+        console.error("Model load failed chi tiết:", e);
         setStatus('error', 'AI ERROR – MODEL LOAD FAILED');
         alert("Không thể tải file model YOLOv10. Vui lòng kiểm tra lại tên file trong thư mục model/ và kết nối mạng!");
     }
