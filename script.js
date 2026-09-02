@@ -78,11 +78,9 @@ async function loadModel() {
     try {
         setStatus('waiting', 'LOADING MODEL...');
         
-        // ⚠️ QUAN TRỌNG: Thay đổi tên file 'yolov10s.onnx' bên dưới 
-        // thành tên chính xác file YOLOv10 mà bạn đang đặt trong thư mục model/ trên GitHub
-        const modelFileName = 'yolov10s.onnx'; 
+        // CẤU HÌNH ĐÚNG TÊN FILE yolov10n.onnx
+        const modelFileName = 'yolov10n.onnx'; 
 
-        // Danh sách các đường dẫn dự phòng để tránh lỗi 404 trên GitHub Pages
         const modelPaths = [
             `./model/${modelFileName}`,
             `model/${modelFileName}`,
@@ -112,7 +110,7 @@ async function loadModel() {
     } catch (e) {
         console.error("Model load failed chi tiết:", e);
         setStatus('error', 'AI ERROR – MODEL LOAD FAILED');
-        alert("Không thể tải file model YOLOv10. Vui lòng kiểm tra lại tên file trong thư mục model/ và kết nối mạng!");
+        alert("Không thể tải file model yolov10n.onnx. Vui lòng kiểm tra lại tên file trong thư mục model/ và kết nối mạng!");
     }
 }
 loadModel();
