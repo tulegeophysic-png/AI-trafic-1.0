@@ -3,9 +3,9 @@ let isRunning = false;
 
 let classConfidenceThresholds = {
     'motorcycle': 0.05,
-    'car': 0.40,
+    'car': 0.30,
     'bus': 0.45,
-    'truck': 0.50
+    'truck': 0.25
 };
 
 let videoElement = document.getElementById('video-source');
@@ -270,7 +270,8 @@ function processFrame() {
 
     if (!isInferencing) {
         isInferencing = true;
-        inferenceCtx.drawImage(canvas, 0, 0, inferenceCanvas.width, inferenceCanvas.height);
+        // Inference phải dùng frame gốc, không dùng canvas đã có box và vạch đỏ.
+        inferenceCtx.drawImage(videoElement, 0, 0, inferenceCanvas.width, inferenceCanvas.height);
         setTimeout(async () => {
             try {
                 const { tensor, ratio, dw, dh } = preprocessWithLetterbox(inferenceCanvas, 640);
