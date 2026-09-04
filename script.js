@@ -2,7 +2,7 @@ let session = null;
 let isRunning = false;
 
 let classConfidenceThresholds = {
-    'motorcycle': 0.15,
+    'motorcycle': 0.08,
     'car': 0.40,
     'bus': 0.45,
     'truck': 0.50
@@ -378,13 +378,14 @@ function suppressOverlappingDetections(detections) {
         detectionsByClass.get(detection.className).push(detection);
     });
 
-    detectionsByClass.forEach(classDetections => {
+    detectionsByClass.forEach((classDetections, className) => {
         classDetections.sort((first, second) => second.confidence - first.confidence);
+        const overlapThreshold = className === 'motorcycle' ? 0.70 : 0.55;
         while (classDetections.length > 0) {
             const bestDetection = classDetections.shift();
             filtered.push(bestDetection);
             for (let index = classDetections.length - 1; index >= 0; index--) {
-                if (calculateIoU(bestDetection.bbox, classDetections[index].bbox) >= 0.55) {
+                if (calculateIoU(bestDetection.bbox, classDetections[index].bbox) >= overlapThreshold) {
                     classDetections.splice(index, 1);
                 }
             }
