@@ -2,7 +2,7 @@ let session = null;
 let isRunning = false;
 
 let classConfidenceThresholds = {
-    'motorcycle': 0.02,
+    'motorcycle': 0.10,
     'car': 0.35,
     'bus': 0.40,
     'truck': 0.45
@@ -32,6 +32,7 @@ let currentFps = 0;
 let isInferencing = false;
 let enableCountingLine = true; 
 let latestDetections = [];
+let videoObjectUrl = null;
 
 setInterval(() => {
     const now = new Date();
@@ -78,6 +79,7 @@ function toggleCountingLineUI() {
         btn.className = "btn btn-danger";
         btn.innerText = "Vạch: OFF";
     }
+    drawScene(latestDetections);
 }
 
 canvas.addEventListener('mousedown', (e) => {
@@ -98,7 +100,10 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mouseup', () => { isDraggingLine = false; });
-function resetLinePosition() { lineConfig.positionRatio = 0.35; }
+function resetLinePosition() {
+    lineConfig.positionRatio = 0.35;
+    drawScene(latestDetections);
+}
 
 const uploadInput = document.getElementById('upload-video');
 if (uploadInput) {
@@ -106,7 +111,9 @@ if (uploadInput) {
         const file = e.target.files[0];
         if (file) {
             resetSystemDataOnly();
-            videoElement.src = URL.createObjectURL(file);
+            if (videoObjectUrl) URL.revokeObjectURL(videoObjectUrl);
+            videoObjectUrl = URL.createObjectURL(file);
+            videoElement.src = videoObjectUrl;
             videoElement.load();
             videoElement.onloadedmetadata = function() {
                 canvas.width = videoElement.videoWidth;
@@ -167,6 +174,7 @@ async function loadModel() {
         setStatus('ready', 'AI READY');
         if (videoElement.src) document.getElementById('btn-start').disabled = false;
     } catch (e) {
+        console.error('Không thể tải model:', e);
         setStatus('stopped', 'AI ERROR');
     }
 }
@@ -182,7 +190,10 @@ function setStatus(cls, text) {
 function startAI() {
     if (!videoElement.src || !session) return;
     isRunning = true;
-    videoElement.play();
+    videoElement.play().catch((err) => {
+        console.error('Không thể phát video:', err);
+        stopAI();
+    });
     document.getElementById('btn-start').disabled = true;
     document.getElementById('btn-stop').disabled = false;
     document.getElementById('btn-capture').disabled = false;
@@ -193,7 +204,7 @@ function startAI() {
 function stopAI() {
     isRunning = false;
     videoElement.pause();
-    document.getElementById('btn-start').disabled = false;
+    document.getElementById('btn-start').disabled = !(videoElement.src && session);
     document.getElementById('btn-stop').disabled = true;
     document.getElementById('btn-capture').disabled = true;
     setStatus('stopped', 'AI STOPPED');
@@ -249,7 +260,11 @@ function processFrame() {
                 const dets = parseYolov10Output(results[session.outputNames[0]], canvas.width, canvas.height, ratio, dw, dh);
                 latestDetections = matchAndCountVehicles(dets);
                 updateUIStats();
-            } catch (err) {} 
+            } catch (err) {
+                console.error('Lỗi xử lý frame:', err);
+                setStatus('stopped', 'AI ERROR');
+                stopAI();
+            }
             finally { isInferencing = false; }
         }, 0);
     }
@@ -326,11 +341,12 @@ function matchAndCountVehicles(detections) {
     const lineY = lineConfig.positionRatio * canvas.height;
     const nowTime = Date.now();
 
-    // Dọn dẹp lịch sử cũ hơn 1.5 giây để giải phóng bộ nhớ
+    // Giữ track lâu hơn để tránh cấp ID mới khi model bỏ sót vài frame.
     for (let [id, val] of recentVehicles.entries()) {
-        if (nowTime - val.time > 1500) recentVehicles.delete(id);
+        if (nowTime - val.time > 3000) recentVehicles.delete(id);
     }
 
+    const usedIds = new Set();
     detections.forEach(det => {
         const [x, y, w, h] = det.bbox;
         const cx = x + w / 2, cy = y + h / 2;
@@ -339,7 +355,7 @@ function matchAndCountVehicles(detections) {
         let assignedId = null;
         let minD = 180;
         for (let [id, val] of recentVehicles.entries()) {
-            if (val.className === det.className) {
+            if (!usedIds.has(id) && val.className === det.className) {
                 let dist = Math.hypot(cx - val.cx, cy - val.cy);
                 if (dist < minD) {
                     minD = dist;
@@ -351,6 +367,7 @@ function matchAndCountVehicles(detections) {
         if (!assignedId) {
             assignedId = uniqueIdCounter++;
         }
+        usedIds.add(assignedId);
 
         let oldData = recentVehicles.get(assignedId);
 
