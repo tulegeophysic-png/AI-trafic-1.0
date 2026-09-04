@@ -2,7 +2,7 @@ let session = null;
 let isRunning = false;
 
 let classConfidenceThresholds = {
-    'motorcycle': 0.08,
+    'motorcycle': 0.05,
     'car': 0.40,
     'bus': 0.45,
     'truck': 0.50
@@ -201,13 +201,16 @@ function setStatus(cls, text) {
     }
 }
 
-function startAI() {
+async function startAI() {
     if (!videoElement.src || !session) return;
-    isRunning = true;
-    videoElement.play().catch((err) => {
+    try {
+        await videoElement.play();
+    } catch (err) {
         console.error('Không thể phát video:', err);
         stopAI();
-    });
+        return;
+    }
+    isRunning = true;
     document.getElementById('btn-start').disabled = true;
     document.getElementById('btn-stop').disabled = false;
     document.getElementById('btn-capture').disabled = false;
@@ -273,7 +276,7 @@ function processFrame() {
                 const { tensor, ratio, dw, dh } = preprocessWithLetterbox(inferenceCanvas, 640);
                 const results = await session.run({ [session.inputNames[0]]: tensor });
                 const dets = parseYolov10Output(results[session.outputNames[0]], canvas.width, canvas.height, ratio, dw, dh);
-                latestDetections = matchAndCountVehicles(suppressOverlappingDetections(dets));
+                latestDetections = matchAndCountVehicles(dets);
                 updateUIStats();
             } catch (err) {
                 console.error('Lỗi xử lý frame:', err);
@@ -408,7 +411,7 @@ function matchAndCountVehicles(detections) {
 
     const orderedDetections = [...detections].sort((first, second) => second.confidence - first.confidence);
     const candidateMatches = [];
-    const maxMatchDistance = Math.max(80, Math.min(canvas.width, canvas.height) * 0.08);
+    const maxMatchDistance = Math.max(180, Math.min(canvas.width, canvas.height) * 0.15);
 
     orderedDetections.forEach((det, detectionIndex) => {
         const [x, y, w, h] = det.bbox;
