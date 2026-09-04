@@ -38,18 +38,18 @@
                         <span id="file-name" class="file-name">Chưa chọn file</span>
                     </div>
                     <div class="action-buttons">
-                        <button id="btn-start" class="btn btn-success" onclick="startAI()" disabled>START AI</button>
-                        <button id="btn-stop" class="btn btn-danger" onclick="stopAI()" disabled>STOP</button>
-                        <!-- Nút Reset đã được móc nối trực tiếp đến hàm resetSystem() -->
-                        <button id="btn-reset" class="btn btn-warning" onclick="resetSystem()">RESET</button>
-                        <button id="btn-capture" class="btn btn-info" onclick="captureFrame()" disabled>CAPTURE</button>
+                        <button id="btn-start" class="btn btn-success" disabled>START AI</button>
+                        <button id="btn-stop" class="btn btn-danger" disabled>STOP</button>
+                        <!-- Nút Reset đã bỏ onclick, dùng addEventListener trong script.js -->
+                        <button id="btn-reset" class="btn btn-warning">RESET</button>
+                        <button id="btn-capture" class="btn btn-info" disabled>CAPTURE</button>
                     </div>
                 </div>
 
                 <div class="settings-panel" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
                     <div class="slider-group">
                         <label>Confidence Threshold (Car/Truck/Bus): <span id="conf-val">0.15</span></label>
-                        <input type="range" id="conf-slider" min="0.05" max="0.9" step="0.05" value="0.15" oninput="updateConfidence(this.value)">
+                        <input type="range" id="conf-slider" min="0.05" max="0.9" step="0.05" value="0.15">
                     </div>
                     <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 5px;">
                         <div style="flex: 1;">
@@ -61,8 +61,8 @@
                             </select>
                         </div>
                         <div style="display: flex; gap: 5px; align-items: flex-end; padding-top: 16px;">
-                            <button id="btn-toggle-line" class="btn btn-success" style="font-size: 11px; padding: 5px 10px;" onclick="toggleCountingLineUI()">Vạch: ON</button>
-                            <button class="btn btn-info" style="font-size: 11px; padding: 5px 10px;" onclick="resetLinePosition()">Reset Vạch Đếm</button>
+                            <button id="btn-toggle-line" class="btn btn-success" style="font-size: 11px; padding: 5px 10px;">Vạch: ON</button>
+                            <button id="btn-reset-line" class="btn btn-info" style="font-size: 11px; padding: 5px 10px;">Reset Vạch Đếm</button>
                         </div>
                     </div>
                     <div style="font-size: 11px; color: #94a3b8; font-style: italic;">

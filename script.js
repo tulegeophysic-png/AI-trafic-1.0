@@ -28,12 +28,58 @@ let frameCount = 0;
 let currentFps = 0;
 let isInferencing = false;
 let enableCountingLine = true; 
+let latestVehicles = [];
 
+// Đồng hồ hệ thống thời gian thực
 setInterval(() => {
     const now = new Date();
     const clockEl = document.getElementById('clock');
     if (clockEl) clockEl.innerText = now.toTimeString().split(' ')[0];
 }, 1000);
+
+// --- GẮN KẾT SỰ KIỆN TOÀN BỘ GIAO DIỆN KHI DOM SẴN SÀNG ---
+document.addEventListener('DOMContentLoaded', () => {
+    // 1. Nút Start AI
+    const btnStart = document.getElementById('btn-start');
+    if (btnStart) btnStart.addEventListener('click', startAI);
+
+    // 2. Nút Stop AI
+    const btnStop = document.getElementById('btn-stop');
+    if (btnStop) btnStop.addEventListener('click', stopAI);
+
+    // 3. Nút Reset Hệ Thống (Đã sửa hoạt động 100%)
+    const btnReset = document.getElementById('btn-reset');
+    if (btnReset) {
+        btnReset.addEventListener('click', () => {
+            console.log("Đã kích hoạt Reset hệ thống.");
+            resetSystem();
+        });
+    }
+
+    // 4. Nút Capture Khung Hình
+    const btnCapture = document.getElementById('btn-capture');
+    if (btnCapture) btnCapture.addEventListener('click', captureFrame);
+
+    // 5. Nút Bật/Tắt Vạch Đếm
+    const btnToggleLine = document.getElementById('btn-toggle-line');
+    if (btnToggleLine) btnToggleLine.addEventListener('click', toggleCountingLineUI);
+
+    // 6. Nút Reset Vạch Đếm
+    const btnResetLine = document.getElementById('btn-reset-line');
+    if (btnResetLine) btnResetLine.addEventListener('click', resetLinePosition);
+
+    // 7. Thanh trượt Confidence
+    const confSlider = document.getElementById('conf-slider');
+    if (confSlider) {
+        confSlider.addEventListener('input', (e) => {
+            updateConfidence(e.target.value);
+        });
+    }
+
+    // Khởi tạo biểu đồ thống kê ban đầu
+    initChart();
+    loadModel();
+});
 
 function toggleCountingLineUI() {
     enableCountingLine = !enableCountingLine;
@@ -123,7 +169,6 @@ function initChart() {
         }
     });
 }
-initChart();
 
 function updateConfidence(val) {
     confidenceThreshold = parseFloat(val);
@@ -161,7 +206,6 @@ async function loadModel() {
         console.error("Lỗi tải model:", e);
     }
 }
-loadModel();
 
 function setStatus(statusClass, text) {
     const badge = document.getElementById('system-status');
@@ -201,7 +245,6 @@ function stopAI() {
     setStatus('stopped', 'AI STOPPED');
 }
 
-// 1. Hàm chỉ làm mới dữ liệu (giữ lại cấu hình)
 function resetSystemDataOnly() {
     countsLeft = { car: 0, motorcycle: 0, bus: 0, truck: 0, total: 0 };
     countsRight = { car: 0, motorcycle: 0, bus: 0, truck: 0, total: 0 };
@@ -209,42 +252,25 @@ function resetSystemDataOnly() {
     previousVehiclePositions.clear();
     countedGlobalIds.clear();
     uniqueGlobalId = 1;
+    latestVehicles = [];
     updateUIStats();
 }
 
-// 2. Hàm RESET toàn bộ hệ thống (được gọi từ nút bấm RESET trên HTML)
 function resetSystem() {
-    // Dừng tiến trình AI và pause video lại
     stopAI();
-
-    // Reset toàn bộ số đếm và bộ nhớ tracking ID
     resetSystemDataOnly();
-
-    // Đưa vạch giám sát về vị trí mặc định ban đầu (0.35)
     resetLinePosition();
 
-    // Đưa video về giây đầu tiên (nếu đã load video)
-    if (videoElement) {
+    if (videoElement && videoElement.src) {
         videoElement.currentTime = 0;
-        videoElement.onloadedmetadata = function() {
-            canvas.width = videoElement.videoWidth;
-            canvas.height = videoElement.videoHeight;
-        };
-        // Vẽ lại khung hình trống ban đầu lên canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         if (videoElement.readyState >= 2) {
             ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
             drawDetectionsAndLine([]);
         }
     }
-
-    // Đặt lại trạng thái banner giao thông về bình thường
     setCongestion(false);
-    
-    console.log("Hệ thống đã được Reset thành công.");
 }
-
-let latestVehicles = [];
 
 function processFrame() {
     if (!isRunning) return;
