@@ -1,15 +1,14 @@
 let session = null;
 let isRunning = false;
 
-// Thiết lập Confidence Threshold riêng biệt cho từng loại xe
-const classConfidenceThresholds = {
-    'motorcycle': 0.08, // Xe máy nhỏ, dễ mờ -> giữ ngưỡng thấp
-    'car': 0.35,        // Ô tô con cần chính xác hơn để tránh nhầm
+// Ngưỡng Confidence riêng biệt cho từng loại xe (đã tối ưu hoá)
+let classConfidenceThresholds = {
+    'motorcycle': 0.10, // Xe máy nhỏ, giữ ngưỡng thấp để bắt xe xa
+    'car': 0.35,        // Ô tô con
     'bus': 0.40,        // Xe khách lớn
-    'truck': 0.45       // Xe tải cần ngưỡng cao để loại bỏ hoàn toàn lỗi nhận diện nhầm
+    'truck': 0.45       // Xe tải, ngưỡng cao để lọc triệt để lỗi nhận diện nhầm
 };
 
-let confidenceThreshold = 0.15; // Ngưỡng mặc định chung nếu dùng thanh trượt
 let videoElement = document.getElementById('video-source');
 let canvas = document.getElementById('canvas');
 let ctx = canvas.getContext('2d');
@@ -45,7 +44,7 @@ setInterval(() => {
     if (clockEl) clockEl.innerText = now.toTimeString().split(' ')[0];
 }, 1000);
 
-// --- GẮN KẾT SỰ KIỆN TOÀN BỘ GIAO DIỆN KHI DOM SẴN SÀNG ---
+// --- GẮN KẾT SỰ KIỆN GIAO DIỆN ---
 document.addEventListener('DOMContentLoaded', () => {
     const btnStart = document.getElementById('btn-start');
     if (btnStart) btnStart.addEventListener('click', startAI);
@@ -54,12 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnStop) btnStop.addEventListener('click', stopAI);
 
     const btnReset = document.getElementById('btn-reset');
-    if (btnReset) {
-        btnReset.addEventListener('click', () => {
-            console.log("Đã kích hoạt Reset hệ thống.");
-            resetSystem();
-        });
-    }
+    if (btnReset) btnReset.addEventListener('click', resetSystem);
 
     const btnCapture = document.getElementById('btn-capture');
     if (btnCapture) btnCapture.addEventListener('click', captureFrame);
@@ -70,16 +64,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnResetLine = document.getElementById('btn-reset-line');
     if (btnResetLine) btnResetLine.addEventListener('click', resetLinePosition);
 
-    const confSlider = document.getElementById('conf-slider');
-    if (confSlider) {
-        confSlider.addEventListener('input', (e) => {
-            updateConfidence(e.target.value);
-        });
-    }
+    // Lắng nghe sự kiện thay đổi của 4 thanh trượt confidence riêng biệt
+    setupSlider('conf-moto-slider', 'motorcycle', 'conf-moto-val');
+    setupSlider('conf-car-slider', 'car', 'conf-car-val');
+    setupSlider('conf-bus-slider', 'bus', 'conf-bus-val');
+    setupSlider('conf-truck-slider', 'truck', 'conf-truck-val');
 
     initChart();
     loadModel();
 });
+
+function setupSlider(sliderId, vehicleKey, valSpanId) {
+    const slider = document.getElementById(sliderId);
+    const span = document.getElementById(valSpanId);
+    if (slider && span) {
+        slider.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            classConfidenceThresholds[vehicleKey] = val;
+            span.innerText = val.toFixed(2);
+        });
+    }
+}
 
 function toggleCountingLineUI() {
     enableCountingLine = !enableCountingLine;
@@ -168,12 +173,6 @@ function initChart() {
             plugins: { legend: { labels: { color: '#f8fafc', font: { size: 10 } } } }
         }
     });
-}
-
-function updateConfidence(val) {
-    confidenceThreshold = parseFloat(val);
-    const confValEl = document.getElementById('conf-val');
-    if (confValEl) confValEl.innerText = val;
 }
 
 async function loadModel() {
@@ -371,7 +370,7 @@ function parseYolov10Output(output, origWidth, origHeight, ratio, dw, dh) {
 
         const className = classMap[clsId];
         if (className) {
-            // Lấy ngưỡng riêng theo từng loại xe (nếu không có trong bảng, mặc định lấy 0.25)
+            // Lấy ngưỡng confidence riêng biệt tương ứng với loại phương tiện
             const specificThreshold = classConfidenceThresholds[className] || 0.25;
 
             if (conf >= specificThreshold) {
