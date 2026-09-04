@@ -2,15 +2,17 @@ let session = null;
 let isRunning = false;
 
 let classConfidenceThresholds = {
-    'motorcycle': 0.10,
-    'car': 0.35,
-    'bus': 0.40,
-    'truck': 0.45
+    'motorcycle': 0.15,
+    'car': 0.40,
+    'bus': 0.45,
+    'truck': 0.50
 };
 
 let videoElement = document.getElementById('video-source');
 let canvas = document.getElementById('canvas');
 let ctx = canvas.getContext('2d');
+let inferenceCanvas = document.createElement('canvas');
+let inferenceCtx = inferenceCanvas.getContext('2d');
 
 let classMap = { 2: 'car', 3: 'motorcycle', 5: 'bus', 7: 'truck' };
 
@@ -61,6 +63,8 @@ function setupSlider(sliderId, vehicleKey, valSpanId) {
     const slider = document.getElementById(sliderId);
     const span = document.getElementById(valSpanId);
     if (slider && span) {
+        slider.value = classConfidenceThresholds[vehicleKey];
+        span.innerText = classConfidenceThresholds[vehicleKey].toFixed(2);
         slider.addEventListener('input', (e) => {
             const val = parseFloat(e.target.value);
             classConfidenceThresholds[vehicleKey] = val;
@@ -118,6 +122,8 @@ if (uploadInput) {
             videoElement.onloadedmetadata = function() {
                 canvas.width = videoElement.videoWidth;
                 canvas.height = videoElement.videoHeight;
+                inferenceCanvas.width = canvas.width;
+                inferenceCanvas.height = canvas.height;
                 ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
                 drawScene([]);
                 if (session) {
@@ -253,12 +259,13 @@ function processFrame() {
 
     if (!isInferencing) {
         isInferencing = true;
+        inferenceCtx.drawImage(canvas, 0, 0, inferenceCanvas.width, inferenceCanvas.height);
         setTimeout(async () => {
             try {
-                const { tensor, ratio, dw, dh } = preprocessWithLetterbox(canvas, 640);
+                const { tensor, ratio, dw, dh } = preprocessWithLetterbox(inferenceCanvas, 640);
                 const results = await session.run({ [session.inputNames[0]]: tensor });
                 const dets = parseYolov10Output(results[session.outputNames[0]], canvas.width, canvas.height, ratio, dw, dh);
-                latestDetections = matchAndCountVehicles(dets);
+                latestDetections = matchAndCountVehicles(suppressOverlappingDetections(dets));
                 updateUIStats();
             } catch (err) {
                 console.error('Lỗi xử lý frame:', err);
@@ -297,10 +304,17 @@ function preprocessWithLetterbox(srcCanvas, targetSize = 640) {
 
 function parseYolov10Output(output, origW, origH, ratio, dw, dh) {
     const dets = [];
+    if (!output || !output.data || !output.dims || output.dims.length !== 3) {
+        throw new Error('Output model không đúng định dạng 3 chiều');
+    }
     const data = output.data;
     const dims = output.dims;
 
     const parseBox = (x1, y1, x2, y2, conf, clsId) => {
+        if (![x1, y1, x2, y2, conf, clsId].every(Number.isFinite)) return;
+        if (Math.max(Math.abs(x1), Math.abs(y1), Math.abs(x2), Math.abs(y2)) <= 1.5) {
+            x1 *= 640; y1 *= 640; x2 *= 640; y2 *= 640;
+        }
         let rx1 = (x1 - dw) / ratio, ry1 = (y1 - dh) / ratio;
         let rx2 = (x2 - dw) / ratio, ry2 = (y2 - dh) / ratio;
         rx1 = Math.max(0, Math.min(origW, rx1));
@@ -333,6 +347,43 @@ function parseYolov10Output(output, origW, origH, ratio, dw, dh) {
         }
     }
     return dets;
+}
+
+function calculateIoU(firstBox, secondBox) {
+    const [firstX, firstY, firstW, firstH] = firstBox;
+    const [secondX, secondY, secondW, secondH] = secondBox;
+    const intersectionX = Math.max(firstX, secondX);
+    const intersectionY = Math.max(firstY, secondY);
+    const intersectionRight = Math.min(firstX + firstW, secondX + secondW);
+    const intersectionBottom = Math.min(firstY + firstH, secondY + secondH);
+    const intersectionArea = Math.max(0, intersectionRight - intersectionX) * Math.max(0, intersectionBottom - intersectionY);
+    const unionArea = firstW * firstH + secondW * secondH - intersectionArea;
+    return unionArea > 0 ? intersectionArea / unionArea : 0;
+}
+
+function suppressOverlappingDetections(detections) {
+    const filtered = [];
+    const detectionsByClass = new Map();
+
+    detections.forEach(detection => {
+        if (!detectionsByClass.has(detection.className)) detectionsByClass.set(detection.className, []);
+        detectionsByClass.get(detection.className).push(detection);
+    });
+
+    detectionsByClass.forEach(classDetections => {
+        classDetections.sort((first, second) => second.confidence - first.confidence);
+        while (classDetections.length > 0) {
+            const bestDetection = classDetections.shift();
+            filtered.push(bestDetection);
+            for (let index = classDetections.length - 1; index >= 0; index--) {
+                if (calculateIoU(bestDetection.bbox, classDetections[index].bbox) >= 0.55) {
+                    classDetections.splice(index, 1);
+                }
+            }
+        }
+    });
+
+    return filtered;
 }
 
 function matchAndCountVehicles(detections) {
