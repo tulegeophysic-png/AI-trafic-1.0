@@ -406,34 +406,44 @@ function matchAndCountVehicles(detections) {
         if (nowTime - val.time > 3000) recentVehicles.delete(id);
     }
 
-    const usedIds = new Set();
-    detections.forEach(det => {
+    const orderedDetections = [...detections].sort((first, second) => second.confidence - first.confidence);
+    const candidateMatches = [];
+    const maxMatchDistance = Math.max(80, Math.min(canvas.width, canvas.height) * 0.08);
+
+    orderedDetections.forEach((det, detectionIndex) => {
         const [x, y, w, h] = det.bbox;
         const cx = x + w / 2, cy = y + h / 2;
-
-        // Tìm xem xe này có khớp với ID gần đây không
-        let assignedId = null;
-        let bestMatchScore = -Infinity;
-        const maxMatchDistance = Math.max(80, Math.min(canvas.width, canvas.height) * 0.08);
         for (let [id, val] of recentVehicles.entries()) {
-            if (!usedIds.has(id) && val.className === det.className) {
+            if (val.className === det.className) {
                 const distance = Math.hypot(cx - val.cx, cy - val.cy);
                 const overlap = val.bbox ? calculateIoU(det.bbox, val.bbox) : 0;
                 if (overlap >= 0.05 || distance <= maxMatchDistance) {
-                    const matchScore = overlap * 1000 - distance;
-                    if (matchScore > bestMatchScore) {
-                        bestMatchScore = matchScore;
-                    
-                    assignedId = id;
-                    }
+                    candidateMatches.push({ detectionIndex, id, score: overlap * 1000 - distance });
                 }
             }
         }
+    });
+
+    candidateMatches.sort((first, second) => second.score - first.score);
+    const assignedIds = new Map();
+    const usedIds = new Set();
+    const usedDetections = new Set();
+    candidateMatches.forEach(match => {
+        if (!usedIds.has(match.id) && !usedDetections.has(match.detectionIndex)) {
+            assignedIds.set(match.detectionIndex, match.id);
+            usedIds.add(match.id);
+            usedDetections.add(match.detectionIndex);
+        }
+    });
+
+    orderedDetections.forEach((det, detectionIndex) => {
+        const [x, y, w, h] = det.bbox;
+        const cx = x + w / 2, cy = y + h / 2;
+        let assignedId = assignedIds.get(detectionIndex);
 
         if (!assignedId) {
             assignedId = uniqueIdCounter++;
         }
-        usedIds.add(assignedId);
 
         let oldData = recentVehicles.get(assignedId);
 
