@@ -201,6 +201,7 @@ function stopAI() {
     setStatus('stopped', 'AI STOPPED');
 }
 
+// 1. Hàm chỉ làm mới dữ liệu (giữ lại cấu hình)
 function resetSystemDataOnly() {
     countsLeft = { car: 0, motorcycle: 0, bus: 0, truck: 0, total: 0 };
     countsRight = { car: 0, motorcycle: 0, bus: 0, truck: 0, total: 0 };
@@ -209,6 +210,38 @@ function resetSystemDataOnly() {
     countedGlobalIds.clear();
     uniqueGlobalId = 1;
     updateUIStats();
+}
+
+// 2. Hàm RESET toàn bộ hệ thống (được gọi từ nút bấm RESET trên HTML)
+function resetSystem() {
+    // Dừng tiến trình AI và pause video lại
+    stopAI();
+
+    // Reset toàn bộ số đếm và bộ nhớ tracking ID
+    resetSystemDataOnly();
+
+    // Đưa vạch giám sát về vị trí mặc định ban đầu (0.35)
+    resetLinePosition();
+
+    // Đưa video về giây đầu tiên (nếu đã load video)
+    if (videoElement) {
+        videoElement.currentTime = 0;
+        videoElement.onloadedmetadata = function() {
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+        };
+        // Vẽ lại khung hình trống ban đầu lên canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (videoElement.readyState >= 2) {
+            ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+            drawDetectionsAndLine([]);
+        }
+    }
+
+    // Đặt lại trạng thái banner giao thông về bình thường
+    setCongestion(false);
+    
+    console.log("Hệ thống đã được Reset thành công.");
 }
 
 let latestVehicles = [];
@@ -338,7 +371,6 @@ function parseYolov10Output(output, origWidth, origHeight, ratio, dw, dh) {
     return dets;
 }
 
-// HÀM TRACKING VÀ ĐẾM NGAY LẬP TỨC KHI CÓ ID MỚI XUẤT HIỆN
 function processCountingAndTracking(detections) {
     let currentFrameVehicles = [];
 
@@ -360,7 +392,6 @@ function processCountingAndTracking(detections) {
             }
         }
 
-        // Phát hiện ID mới -> Cấp ID và ĐẾM LUÔN LẬP TỨC vào tổng
         if (!matchedId) {
             matchedId = uniqueGlobalId++;
             
