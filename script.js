@@ -1,12 +1,11 @@
 let session = null;
 let isRunning = false;
 
-// Thiết lập Confidence Threshold riêng biệt (Tối ưu hóa sẵn sàng)
 let classConfidenceThresholds = {
-    'motorcycle': 0.10, // Xe máy: giữ thấp để bám bắt xe ở xa
-    'car': 0.35,        // Ô tô con: cân bằng chuẩn xác
-    'bus': 0.40,        // Xe khách lớn
-    'truck': 0.45       // Xe tải: ngưỡng cao để loại bỏ hoàn toàn hiện tượng nhận diện nhầm xa
+    'motorcycle': 0.10,
+    'car': 0.35,
+    'bus': 0.40,
+    'truck': 0.45
 };
 
 let videoElement = document.getElementById('video-source');
@@ -23,9 +22,6 @@ let previousVehiclePositions = new Map();
 let uniqueGlobalId = 1;
 let countedGlobalIds = new Set();
 
-let lowDensityThreshold = 5;
-let highDensityThreshold = 15;
-
 let lineConfig = { positionRatio: 0.35 }; 
 let isDraggingLine = false;
 let chartInstance = null;
@@ -37,34 +33,20 @@ let isInferencing = false;
 let enableCountingLine = true; 
 let latestVehicles = [];
 
-// Đồng hồ hệ thống thời gian thực
 setInterval(() => {
     const now = new Date();
     const clockEl = document.getElementById('clock');
     if (clockEl) clockEl.innerText = now.toTimeString().split(' ')[0];
 }, 1000);
 
-// --- GẮN KẾT SỰ KIỆN GIAO DIỆN KHI DOM SẴN SÀNG ---
 document.addEventListener('DOMContentLoaded', () => {
-    const btnStart = document.getElementById('btn-start');
-    if (btnStart) btnStart.addEventListener('click', startAI);
+    document.getElementById('btn-start').addEventListener('click', startAI);
+    document.getElementById('btn-stop').addEventListener('click', stopAI);
+    document.getElementById('btn-reset').addEventListener('click', resetSystem);
+    document.getElementById('btn-capture').addEventListener('click', captureFrame);
+    document.getElementById('btn-toggle-line').addEventListener('click', toggleCountingLineUI);
+    document.getElementById('btn-reset-line').addEventListener('click', resetLinePosition);
 
-    const btnStop = document.getElementById('btn-stop');
-    if (btnStop) btnStop.addEventListener('click', stopAI);
-
-    const btnReset = document.getElementById('btn-reset');
-    if (btnReset) btnReset.addEventListener('click', resetSystem);
-
-    const btnCapture = document.getElementById('btn-capture');
-    if (btnCapture) btnCapture.addEventListener('click', captureFrame);
-
-    const btnToggleLine = document.getElementById('btn-toggle-line');
-    if (btnToggleLine) btnToggleLine.addEventListener('click', toggleCountingLineUI);
-
-    const btnResetLine = document.getElementById('btn-reset-line');
-    if (btnResetLine) btnResetLine.addEventListener('click', resetLinePosition);
-
-    // Lắng nghe thay đổi của 4 thanh trượt confidence riêng biệt
     setupSlider('conf-moto-slider', 'motorcycle', 'conf-moto-val');
     setupSlider('conf-car-slider', 'car', 'conf-car-val');
     setupSlider('conf-bus-slider', 'bus', 'conf-bus-val');
@@ -89,14 +71,12 @@ function setupSlider(sliderId, vehicleKey, valSpanId) {
 function toggleCountingLineUI() {
     enableCountingLine = !enableCountingLine;
     const btn = document.getElementById('btn-toggle-line');
-    if (btn) {
-        if (enableCountingLine) {
-            btn.className = "btn btn-success";
-            btn.innerText = "Vạch: ON";
-        } else {
-            btn.className = "btn btn-danger";
-            btn.innerText = "Vạch: OFF";
-        }
+    if (enableCountingLine) {
+        btn.className = "btn btn-success";
+        btn.innerText = "Vạch: ON";
+    } else {
+        btn.className = "btn btn-danger";
+        btn.innerText = "Vạch: OFF";
     }
 }
 
@@ -117,13 +97,8 @@ window.addEventListener('mousemove', (e) => {
     lineConfig.positionRatio = Math.max(0.05, Math.min(0.95, mouseY / canvas.height));
 });
 
-window.addEventListener('mouseup', () => {
-    isDraggingLine = false;
-});
-
-function resetLinePosition() {
-    lineConfig.positionRatio = 0.35;
-}
+window.addEventListener('mouseup', () => { isDraggingLine = false; });
+function resetLinePosition() { lineConfig.positionRatio = 0.35; }
 
 const uploadInput = document.getElementById('upload-video');
 if (uploadInput) {
@@ -139,9 +114,8 @@ if (uploadInput) {
                 ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
                 drawDetectionsAndLine([]);
                 if (session) {
-                    const startBtn = document.getElementById('btn-start');
-                    if (startBtn) startBtn.disabled = false;
-                    setStatus('active', 'AI READY');
+                    document.getElementById('btn-start').disabled = false;
+                    setStatus('ready', 'AI READY');
                 }
             };
         }
@@ -151,8 +125,7 @@ if (uploadInput) {
 function initChart() {
     const chartCanvas = document.getElementById('trafficChart');
     if (!chartCanvas) return;
-    const ctxChart = chartCanvas.getContext('2d');
-    chartInstance = new Chart(ctxChart, {
+    chartInstance = new Chart(chartCanvas.getContext('2d'), {
         type: 'bar',
         data: {
             labels: ['Car', 'Motorcycle', 'Bus', 'Truck'],
@@ -165,7 +138,7 @@ function initChart() {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
-                y: { beginAtZero: true, grid: { color: '#1f293d' }, ticks: { color: '#f8fafc', font: { size: 9 } } },
+                y: { beginAtZero: true, grid: { color: '#1e293b' }, ticks: { color: '#f8fafc', font: { size: 9 } } },
                 x: { grid: { display: false }, ticks: { color: '#f8fafc', font: { size: 9 } } }
             },
             plugins: { legend: { labels: { color: '#f8fafc', font: { size: 9 } } } }
@@ -175,39 +148,33 @@ function initChart() {
 
 async function loadModel() {
     try {
-        setStatus('waiting', 'LOADING MODEL...');
-        const modelFileNames = ['yolov10n.onnx', 'yolov10s.onnx'];
-        const folders = ['./', 'model/', './model/'];
-
+        setStatus('ready', 'LOADING...');
         ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/";
+        const folders = ['./', 'model/', './model/'];
+        const modelNames = ['yolov10n.onnx', 'yolov10s.onnx'];
 
-        for (let folder of folders) {
-            for (let name of modelFileNames) {
+        for (let f of folders) {
+            for (let m of modelNames) {
                 try {
-                    let path = folder + name;
-                    session = await ort.InferenceSession.create(path, { executionProviders: ['wasm'] });
+                    session = await ort.InferenceSession.create(f + m, { executionProviders: ['wasm'] });
                     if (session) break;
-                } catch (innerErr) {}
+                } catch (err) {}
             }
             if (session) break;
         }
 
-        if (!session) throw new Error("Không tìm thấy model.");
-        setStatus('active', 'AI READY');
-        if (videoElement.src) {
-            const startBtn = document.getElementById('btn-start');
-            if (startBtn) startBtn.disabled = false;
-        }
+        if (!session) throw new Error("Model not found");
+        setStatus('ready', 'AI READY');
+        if (videoElement.src) document.getElementById('btn-start').disabled = false;
     } catch (e) {
-        setStatus('error', 'AI ERROR');
-        console.error("Lỗi tải model:", e);
+        setStatus('stopped', 'AI ERROR');
     }
 }
 
-function setStatus(statusClass, text) {
+function setStatus(cls, text) {
     const badge = document.getElementById('system-status');
     if (badge) {
-        badge.className = `status-badge ${statusClass}`;
+        badge.className = `status-pill ${cls}`;
         badge.innerText = text;
     }
 }
@@ -216,30 +183,20 @@ function startAI() {
     if (!videoElement.src || !session) return;
     isRunning = true;
     videoElement.play();
-    
-    const startBtn = document.getElementById('btn-start');
-    const stopBtn = document.getElementById('btn-stop');
-    const capBtn = document.getElementById('btn-capture');
-    if (startBtn) startBtn.disabled = true;
-    if (stopBtn) stopBtn.disabled = false;
-    if (capBtn) capBtn.disabled = false;
-
-    setStatus('active', 'RUNNING');
+    document.getElementById('btn-start').disabled = true;
+    document.getElementById('btn-stop').disabled = false;
+    document.getElementById('btn-capture').disabled = false;
+    setStatus('ready', 'RUNNING');
     requestAnimationFrame(processFrame);
 }
 
 function stopAI() {
     isRunning = false;
     videoElement.pause();
-
-    const startBtn = document.getElementById('btn-start');
-    const stopBtn = document.getElementById('btn-stop');
-    const capBtn = document.getElementById('btn-capture');
-    if (startBtn) startBtn.disabled = false;
-    if (stopBtn) stopBtn.disabled = true;
-    if (capBtn) capBtn.disabled = true;
-
-    setStatus('stopped', 'STOPPED');
+    document.getElementById('btn-start').disabled = false;
+    document.getElementById('btn-stop').disabled = true;
+    document.getElementById('btn-capture').disabled = true;
+    setStatus('stopped', 'AI STOPPED');
 }
 
 function resetSystemDataOnly() {
@@ -257,16 +214,12 @@ function resetSystem() {
     stopAI();
     resetSystemDataOnly();
     resetLinePosition();
-
     if (videoElement && videoElement.src) {
         videoElement.currentTime = 0;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (videoElement.readyState >= 2) {
-            ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-            drawDetectionsAndLine([]);
-        }
+        ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+        drawDetectionsAndLine([]);
     }
-    setCongestion(false);
 }
 
 function processFrame() {
@@ -280,8 +233,7 @@ function processFrame() {
     frameCount++;
     if (now - lastTime >= 1000) {
         currentFps = (frameCount * 1000) / (now - lastTime);
-        const fpsEl = document.getElementById('fps-display');
-        if (fpsEl) fpsEl.innerText = currentFps.toFixed(1);
+        document.getElementById('fps-display').innerText = currentFps.toFixed(1);
         frameCount = 0;
         lastTime = now;
     }
@@ -294,104 +246,75 @@ function processFrame() {
         setTimeout(async () => {
             try {
                 const { tensor, ratio, dw, dh } = preprocessWithLetterbox(canvas, 640);
-                const inputName = session.inputNames[0];
-                const results = await session.run({ [inputName]: tensor });
-                const output = results[session.outputNames[0]];
-
-                const detections = parseYolov10Output(output, canvas.width, canvas.height, ratio, dw, dh);
-                latestVehicles = processCountingAndTracking(detections);
+                const results = await session.run({ [session.inputNames[0]]: tensor });
+                const dets = parseYolov10Output(results[session.outputNames[0]], canvas.width, canvas.height, ratio, dw, dh);
+                latestVehicles = processCountingAndTracking(dets);
                 updateUIStats();
-            } catch (err) {
-                console.error("Inference error:", err);
-            } finally {
-                isInferencing = false;
-            }
+            } catch (err) {} 
+            finally { isInferencing = false; }
         }, 0);
     }
-
     requestAnimationFrame(processFrame);
 }
 
-function preprocessWithLetterbox(sourceCanvas, targetSize = 640) {
+function preprocessWithLetterbox(srcCanvas, targetSize = 640) {
     const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = targetSize;
-    tempCanvas.height = targetSize;
-    const tempCtx = tempCanvas.getContext('2d');
-
-    const sw = sourceCanvas.width;
-    const sh = sourceCanvas.height;
+    tempCanvas.width = targetSize; tempCanvas.height = targetSize;
+    const tCtx = tempCanvas.getContext('2d');
+    const sw = srcCanvas.width, sh = srcCanvas.height;
     const ratio = Math.min(targetSize / sw, targetSize / sh);
-    const nw = sw * ratio;
-    const nh = sh * ratio;
-    const dw = (targetSize - nw) / 2;
-    const dh = (targetSize - nh) / 2;
+    const nw = sw * ratio, nh = sh * ratio;
+    const dw = (targetSize - nw) / 2, dh = (targetSize - nh) / 2;
 
-    tempCtx.fillStyle = '#111827';
-    tempCtx.fillRect(0, 0, targetSize, targetSize);
-    tempCtx.drawImage(sourceCanvas, dw, dh, nw, nh);
+    tCtx.fillStyle = '#111827';
+    tCtx.fillRect(0, 0, targetSize, targetSize);
+    tCtx.drawImage(srcCanvas, dw, dh, nw, nh);
 
-    const imgData = tempCtx.getImageData(0, 0, targetSize, targetSize);
-    const { data } = imgData;
+    const imgData = tCtx.getImageData(0, 0, targetSize, targetSize);
+    const data = imgData.data;
     const float32Data = new Float32Array(3 * targetSize * targetSize);
-
     for (let i = 0; i < targetSize * targetSize; i++) {
-        float32Data[i] = data[i * 4] / 255.0;                     
-        float32Data[targetSize * targetSize + i] = data[i * 4 + 1] / 255.0;      
-        float32Data[2 * targetSize * targetSize + i] = data[i * 4 + 2] / 255.0;  
+        float32Data[i] = data[i * 4] / 255.0;
+        float32Data[targetSize * targetSize + i] = data[i * 4 + 1] / 255.0;
+        float32Data[2 * targetSize * targetSize + i] = data[i * 4 + 2] / 255.0;
     }
-    return {
-        tensor: new ort.Tensor('float32', float32Data, [1, 3, targetSize, targetSize]),
-        ratio, dw, dh
-    };
+    return { tensor: new ort.Tensor('float32', float32Data, [1, 3, targetSize, targetSize]), ratio, dw, dh };
 }
 
-function parseYolov10Output(output, origWidth, origHeight, ratio, dw, dh) {
+function parseYolov10Output(output, origW, origH, ratio, dw, dh) {
     const dets = [];
     const data = output.data;
     const dims = output.dims;
 
     const parseBox = (x1, y1, x2, y2, conf, clsId) => {
-        let rx1 = (x1 - dw) / ratio;
-        let ry1 = (y1 - dh) / ratio;
-        let rx2 = (x2 - dw) / ratio;
-        let ry2 = (y2 - dh) / ratio;
+        let rx1 = (x1 - dw) / ratio, ry1 = (y1 - dh) / ratio;
+        let rx2 = (x2 - dw) / ratio, ry2 = (y2 - dh) / ratio;
+        rx1 = Math.max(0, Math.min(origW, rx1));
+        ry1 = Math.max(0, Math.min(origH, ry1));
+        rx2 = Math.max(0, Math.min(origW, rx2));
+        ry2 = Math.max(0, Math.min(origH, ry2));
 
-        rx1 = Math.max(0, Math.min(origWidth, rx1));
-        ry1 = Math.max(0, Math.min(origHeight, ry1));
-        rx2 = Math.max(0, Math.min(origWidth, rx2));
-        ry2 = Math.max(0, Math.min(origHeight, ry2));
-
-        const boxW = rx2 - rx1;
-        const boxH = ry2 - ry1;
-
-        if (boxW < 2 || boxH < 2) return; 
+        const w = rx2 - rx1, h = ry2 - ry1;
+        if (w < 2 || h < 2) return;
 
         const className = classMap[clsId];
         if (className) {
-            // Lọc theo ngưỡng confidence độc lập từng loại phương tiện
-            const specificThreshold = classConfidenceThresholds[className] || 0.25;
-
-            if (conf >= specificThreshold) {
-                dets.push({
-                    bbox: [rx1, ry1, boxW, boxH],
-                    className: className,
-                    confidence: conf
-                });
+            const threshold = classConfidenceThresholds[className] || 0.25;
+            if (conf >= threshold) {
+                dets.push({ bbox: [rx1, ry1, w, h], className, confidence: conf });
             }
         }
     };
 
     if (dims && dims.length === 3) {
         if (dims[2] === 6) {
-            let numRows = dims[1];
-            for (let i = 0; i < numRows; i++) {
-                let offset = i * 6;
-                parseBox(data[offset], data[offset + 1], data[offset + 2], data[offset + 3], data[offset + 4], Math.round(data[offset + 5]));
+            for (let i = 0; i < dims[1]; i++) {
+                let off = i * 6;
+                parseBox(data[off], data[off+1], data[off+2], data[off+3], data[off+4], Math.round(data[off+5]));
             }
         } else if (dims[1] === 6) {
-            let numRows = dims[2];
-            for (let i = 0; i < numRows; i++) {
-                parseBox(data[0 * numRows + i], data[1 * numRows + i], data[2 * numRows + i], data[3 * numRows + i], data[4 * numRows + i], Math.round(data[5 * numRows + i]));
+            for (let i = 0; i < dims[2]; i++) {
+                parseBox(data[i], data[dims[2]+i], data[2*dims[2]+i], data[3*dims[2]+i], data[4*dims[2]+i], Math.round(data[5*dims[2]+i]));
             }
         }
     }
@@ -400,33 +323,40 @@ function parseYolov10Output(output, origWidth, origHeight, ratio, dw, dh) {
 
 function processCountingAndTracking(detections) {
     let currentFrameVehicles = [];
+    const directionMode = document.getElementById('counting-direction').value;
+    const lineCoord = lineConfig.positionRatio * canvas.height;
 
     detections.forEach(det => {
         const [x, y, w, h] = det.bbox;
-        const cx = x + w / 2;
-        const cy = y + h / 2;
+        const cx = x + w / 2, cy = y + h / 2;
 
         let matchedId = null;
-        let minDistance = 150; 
-
+        let minDist = 120;
         for (let [id, pos] of previousVehiclePositions.entries()) {
             if (pos.className === det.className) {
                 let dist = Math.hypot(cx - pos.cx, cy - pos.cy);
-                if (dist < minDistance) {
-                    minDistance = dist;
-                    matchedId = id;
-                }
+                if (dist < minDist) { minDist = dist; matchedId = id; }
             }
         }
 
         if (!matchedId) {
             matchedId = uniqueGlobalId++;
-            
-            if (!countedGlobalIds.has(matchedId)) {
-                countedGlobalIds.add(matchedId);
+        }
 
+        let oldPos = previousVehiclePositions.get(matchedId);
+        if (oldPos && enableCountingLine && !countedGlobalIds.has(matchedId)) {
+            let crossed = false;
+            if (directionMode === 'both') {
+                if ((oldPos.cy < lineCoord && cy >= lineCoord) || (oldPos.cy > lineCoord && cy <= lineCoord)) crossed = true;
+            } else if (directionMode === 'down') {
+                if (oldPos.cy < lineCoord && cy >= lineCoord) crossed = true;
+            } else if (directionMode === 'up') {
+                if (oldPos.cy > lineCoord && cy <= lineCoord) crossed = true;
+            }
+
+            if (crossed) {
+                countedGlobalIds.add(matchedId);
                 const isLeftSide = cx < (canvas.width / 2);
-                
                 if (isLeftSide) {
                     countsLeft[det.className]++;
                     countsLeft.total++;
@@ -434,62 +364,51 @@ function processCountingAndTracking(detections) {
                     countsRight[det.className]++;
                     countsRight.total++;
                 }
-
                 countsTotal[det.className]++;
                 countsTotal.total++;
             }
         }
 
         previousVehiclePositions.set(matchedId, { cx, cy, className: det.className });
-
-        currentFrameVehicles.push({
-            id: matchedId,
-            bbox: [x, y, w, h],
-            className: det.className,
-            confidence: det.confidence
-        });
+        currentFrameVehicles.push({ id: matchedId, bbox: [x, y, w, h], className: det.className, confidence: det.confidence });
     });
-
     return currentFrameVehicles;
 }
 
 function drawDetectionsAndLine(vehicles) {
     if (enableCountingLine) {
-        const lineCoord = lineConfig.positionRatio * canvas.height;
-
+        const lineY = lineConfig.positionRatio * canvas.height;
         ctx.strokeStyle = isDraggingLine ? '#38bdf8' : '#ef4444';
-        ctx.lineWidth = 4;
+        ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.moveTo(0, lineCoord);
-        ctx.lineTo(canvas.width, lineCoord);
+        ctx.moveTo(0, lineY);
+        ctx.lineTo(canvas.width, lineY);
         ctx.stroke();
 
         ctx.fillStyle = isDraggingLine ? '#38bdf8' : '#ef4444';
-        ctx.font = 'bold 14px Segoe UI';
-        ctx.fillText(`VẠCH GIÁM SÁT KÉO THẢ`, 20, lineCoord - 10);
+        ctx.font = 'bold 13px Segoe UI';
+        ctx.fillText("VẠCH ĐẾM PHƯƠNG TIỆN", 15, lineY - 8);
     }
 
-    if (vehicles && vehicles.length > 0) {
-        vehicles.forEach(veh => {
-            const [x, y, w, h] = veh.bbox;
-            const color = getCategoryColor(veh.className);
-
+    if (vehicles) {
+        vehicles.forEach(v => {
+            const [x, y, w, h] = v.bbox;
+            const color = getCategoryColor(v.className);
             ctx.strokeStyle = color;
-            ctx.lineWidth = 3;
+            ctx.lineWidth = 2;
             ctx.strokeRect(x, y, w, h);
 
             ctx.fillStyle = color;
-            ctx.fillRect(x, y > 20 ? y - 20 : 0, 120, 18);
-
+            ctx.fillRect(x, y > 18 ? y - 18 : 0, 110, 16);
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 10px Segoe UI';
-            ctx.fillText(`${veh.className.toUpperCase()} #${veh.id} (${(veh.confidence*100).toFixed(0)}%)`, x + 3, y > 20 ? y - 6: 12);
+            ctx.fillText(`${v.className.toUpperCase()} #${v.id} (${(v.confidence*100).toFixed(0)}%)`, x + 2, y > 18 ? y - 5 : 12);
         });
     }
 }
 
-function getCategoryColor(className) {
-    switch (className) {
+function getCategoryColor(cls) {
+    switch (cls) {
         case 'car': return '#2563eb';
         case 'motorcycle': return '#16a34a';
         case 'bus': return '#d97706';
@@ -499,50 +418,29 @@ function getCategoryColor(className) {
 }
 
 function updateUIStats() {
-    const setSafeText = (id, val) => {
-        const el = document.getElementById(id);
-        if (el) el.innerText = val;
-    };
+    const setText = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
+    setText('count-car-left', countsLeft.car); setText('count-car-right', countsRight.car); setText('count-car', countsTotal.car);
+    setText('count-moto-left', countsLeft.motorcycle); setText('count-moto-right', countsRight.motorcycle); setText('count-moto', countsTotal.motorcycle);
+    setText('count-bus-left', countsLeft.bus); setText('count-bus-right', countsRight.bus); setText('count-bus', countsTotal.bus);
+    setText('count-truck-left', countsLeft.truck); setText('count-truck-right', countsRight.truck); setText('count-truck', countsTotal.truck);
+    setText('count-left-total', countsLeft.total); setText('count-right-total', countsRight.total); setText('count-total', countsTotal.total);
 
-    setSafeText('count-car-left', countsLeft.car);
-    setSafeText('count-car-right', countsRight.car);
-    setSafeText('count-car', countsTotal.car);
+    let density = 'LOW', dClass = 'density-low';
+    if (countsTotal.total >= 40) { density = 'HIGH'; dClass = 'density-high'; }
+    else if (countsTotal.total >= 15) { density = 'MEDIUM'; dClass = 'density-med'; }
 
-    setSafeText('count-moto-left', countsLeft.motorcycle);
-    setSafeText('count-moto-right', countsRight.motorcycle);
-    setSafeText('count-moto', countsTotal.motorcycle);
+    const badge = document.getElementById('density-status');
+    if (badge) { badge.className = `density-badge ${dClass}`; badge.innerText = density; }
 
-    setSafeText('count-bus-left', countsLeft.bus);
-    setSafeText('count-bus-right', countsRight.bus);
-    setSafeText('count-bus', countsTotal.bus);
-
-    setSafeText('count-truck-left', countsLeft.truck);
-    setSafeText('count-truck-right', countsRight.truck);
-    setSafeText('count-truck', countsTotal.truck);
-
-    setSafeText('count-left-total', countsLeft.total);
-    setSafeText('count-right-total', countsRight.total);
-    setSafeText('count-total', countsTotal.total);
-
-    let density = 'LOW';
-    let densityClass = 'low';
-
-    if (countsTotal.total >= highDensityThreshold) {
-        density = 'HIGH';
-        densityClass = 'high';
-        setCongestion(true);
-    } else if (countsTotal.total >= lowDensityThreshold) {
-        density = 'MEDIUM';
-        densityClass = 'medium';
-        setCongestion(false);
-    } else {
-        setCongestion(false);
-    }
-
-    const densityBadge = document.getElementById('density-status');
-    if (densityBadge) {
-        densityBadge.className = `density-badge ${densityClass}`;
-        densityBadge.innerText = density;
+    const banner = document.getElementById('congestion-banner');
+    if (banner) {
+        if (density === 'HIGH') {
+            banner.style.background = '#dc2626';
+            banner.innerText = '⚠️ TRAFFIC CONGESTION WARNING';
+        } else {
+            banner.style.background = '#16a34a';
+            banner.innerText = '✓ TRAFFIC NORMAL';
+        }
     }
 
     if (chartInstance) {
@@ -552,21 +450,9 @@ function updateUIStats() {
     }
 }
 
-function setCongestion(isCongested) {
-    const banner = document.getElementById('congestion-banner');
-    if (!banner) return;
-    if (isCongested) {
-        banner.className = 'congestion-banner warning';
-        banner.innerText = '⚠️ TRAFFIC CONGESTION WARNING';
-    } else {
-        banner.className = 'congestion-banner normal';
-        banner.innerText = '✓ TRAFFIC NORMAL';
-    }
-}
-
 function captureFrame() {
     const link = document.createElement('a');
-    link.download = `ai-traffic-capture-${Date.now()}.png`;
+    link.download = `capture-${Date.now()}.png`;
     link.href = canvas.toDataURL('image/png');
     link.click();
 }

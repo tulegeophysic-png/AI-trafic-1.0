@@ -3,17 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Traffic Counter & Monitoring System</title>
-    <!-- Thư viện Chart.js & ONNX Runtime Web -->
+    <title>Hệ Thống Giám Sát & Đếm Phương Tiện Giao Thông AI (YOLOv10)</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
     <style>
         :root {
-            --bg-color: #0b1329;
-            --panel-bg: #141e3d;
-            --text-color: #f8fafc;
+            --bg-color: #0b132b;
+            --panel-bg: #111b38;
+            --border-color: #1e293b;
             --accent-color: #38bdf8;
-            --border-color: #2a3b6c;
+            --text-color: #f8fafc;
         }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -27,7 +26,7 @@
         }
         header {
             width: 100%;
-            max-width: 1250px;
+            max-width: 1300px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -35,25 +34,15 @@
             padding-bottom: 8px;
             margin-bottom: 10px;
         }
-        h1 { font-size: 18px; margin: 0; color: var(--accent-color); }
-        .main-container {
+        h1 { font-size: 16px; margin: 0; color: var(--text-color); font-weight: bold; }
+        .main-layout {
             display: flex;
             width: 100%;
-            max-width: 1250px;
+            max-width: 1300px;
             gap: 12px;
         }
-        .video-section {
-            flex: 1.8;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        .sidebar-section {
-            flex: 1.2;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
+        .left-column { flex: 1.7; display: flex; flex-direction: column; gap: 10px; }
+        .right-column { flex: 1.3; display: flex; flex-direction: column; gap: 10px; }
         .panel {
             background-color: var(--panel-bg);
             border: 1px solid var(--border-color);
@@ -69,109 +58,101 @@
             display: flex;
             justify-content: center;
             align-items: center;
+            max-height: 480px;
         }
-        canvas {
-            width: 100%;
-            height: auto;
-            display: block;
-        }
+        canvas { width: 100%; height: auto; display: block; }
         video { display: none; }
-        .controls-bar {
+        .controls-row {
             display: flex;
             gap: 6px;
-            flex-wrap: wrap;
             align-items: center;
+            margin-top: 8px;
         }
         .btn {
-            padding: 6px 10px;
+            padding: 5px 12px;
             border: none;
             border-radius: 4px;
             font-weight: bold;
             cursor: pointer;
             font-size: 11px;
-            transition: opacity 0.2s;
+            color: #fff;
         }
-        .btn:hover { opacity: 0.85; }
+        .btn-primary { background-color: #2563eb; }
+        .btn-danger { background-color: #dc2626; }
+        .btn-success { background-color: #16a34a; }
+        .btn-info { background-color: #0284c7; }
         .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .btn-primary { background-color: #2563eb; color: #fff; }
-        .btn-danger { background-color: #dc2626; color: #fff; }
-        .btn-success { background-color: #16a34a; color: #fff; }
-        .btn-info { background-color: #0284c7; color: #fff; }
-        
-        .status-badge {
-            padding: 2px 6px;
-            border-radius: 10px;
+
+        .status-pill {
+            padding: 2px 8px;
+            border-radius: 12px;
             font-size: 10px;
             font-weight: bold;
         }
-        .status-badge.active { background: #16a34a; color: #fff; }
-        .status-badge.waiting { background: #d97706; color: #fff; }
-        .status-badge.stopped { background: #475569; color: #fff; }
-        .status-badge.error { background: #dc2626; color: #fff; }
-
+        .status-pill.ready { background: #16a34a; color: #fff; }
+        .status-pill.stopped { background: #475569; color: #fff; }
+        
+        .stat-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+            margin-top: 6px;
+        }
+        .stat-table th, .stat-table td {
+            border: 1px solid #1e293b;
+            padding: 5px;
+            text-align: center;
+        }
+        .stat-table th { background-color: #0b132b; color: var(--accent-color); }
+        
         .density-badge {
-            display: inline-block;
             padding: 2px 6px;
             border-radius: 4px;
             font-size: 10px;
             font-weight: bold;
         }
-        .density-badge.low { background: #16a34a; color: white; }
-        .density-badge.medium { background: #d97706; color: white; }
-        .density-badge.high { background: #dc2626; color: white; }
+        .density-low { background: #16a34a; color: white; }
+        .density-med { background: #d97706; color: white; }
+        .density-high { background: #dc2626; color: white; }
 
         .slider-group {
             display: flex;
             flex-direction: column;
             gap: 2px;
             font-size: 11px;
+            margin-bottom: 6px;
         }
         .slider-group input[type="range"] {
             width: 100%;
             accent-color: var(--accent-color);
             cursor: pointer;
         }
-        .stat-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 11px;
-            margin-top: 5px;
-        }
-        .stat-table th, .stat-table td {
-            border: 1px solid var(--border-color);
-            padding: 4px;
-            text-align: center;
-        }
-        .stat-table th { background-color: #0b1329; color: var(--accent-color); }
-        .congestion-banner {
+        .info-box {
+            border: 1px solid #d97706;
+            background: rgba(217, 119, 6, 0.1);
             padding: 6px;
-            text-align: center;
-            font-weight: bold;
             border-radius: 4px;
             font-size: 11px;
-            margin-top: 5px;
+            margin-top: 6px;
+            color: #fde047;
         }
-        .congestion-banner.normal { background: #16a34a; color: white; }
-        .congestion-banner.warning { background: #dc2626; color: white; }
     </style>
 </head>
 <body>
 
     <header>
-        <h1>AI TRAFFIC – YOLOV10 NHẬN DIỆN, TRACKING & ĐẾM PHƯƠNG TIỆN</h1>
-        <div style="display: flex; gap: 8px; align-items: center; font-size: 11px;">
-            <span>🕒 <b id="clock">00:00:00</b></span> |
-            <span>FPS: <b id="fps-display" style="color: #38bdf8;">0.0</b></span> |
-            <span>AI Status: <span id="system-status" class="status-badge waiting">WAITING</span></span> |
-            <span>Mật độ: <span id="density-status" class="density-badge low">LOW</span></span>
+        <h1>🚗 Hệ Thống Giám Sát & Đếm Phương Tiện Giao Thông AI (YOLOv10)</h1>
+        <div style="display: flex; gap: 10px; align-items: center; font-size: 11px;">
+            <span>Trạng thái: <span id="system-status" class="status-pill ready">AI READY</span></span>
+            <span>FPS: <b id="fps-display" style="color: var(--accent-color);">0.0</b></span>
         </div>
     </header>
 
-    <div class="main-container">
-        <!-- Cột trái: Video & Điều chỉnh -->
-        <div class="video-section">
+    <div class="main-layout">
+        <!-- CỘT TRÁI -->
+        <div class="left-column">
             <div class="panel">
-                <div class="controls-bar" style="margin-bottom: 8px;">
+                <div class="controls-row" style="margin-top: 0; margin-bottom: 8px;">
                     <input type="file" id="upload-video" accept="video/*" style="font-size: 11px;">
                 </div>
 
@@ -180,67 +161,81 @@
                     <video id="video-source" muted playsinline></video>
                 </div>
 
-                <div class="controls-bar" style="margin-top: 8px; justify-content: space-between;">
-                    <div style="display: flex; gap: 5px;">
-                        <button id="btn-start" class="btn btn-primary" disabled>START AI</button>
-                        <button id="btn-stop" class="btn btn-danger" disabled>STOP</button>
-                        <button id="btn-reset" class="btn btn-danger">RESET</button>
+                <div class="controls-row" style="justify-content: space-between;">
+                    <div style="display: flex; gap: 6px;">
+                        <button id="btn-start" class="btn btn-primary" disabled>▶ Chạy AI</button>
+                        <button id="btn-stop" class="btn btn-danger" disabled>⏸ Dừng lại</button>
+                        <button id="btn-reset" class="btn btn-danger">🔄 Reset Thống Kê</button>
                     </div>
                     <div>
-                        <button id="btn-capture" class="btn btn-info" disabled>CAPTURE</button>
+                        <button id="btn-capture" class="btn btn-info" disabled>📷 Chụp Khung Hình</button>
                     </div>
                 </div>
             </div>
 
-            <!-- Bảng 4 thanh trượt Confidence riêng biệt -->
+            <!-- TÙY CHỈNH CONFIDENCE THRESHOLD (4 THANH TRƯỢT GỐC) -->
             <div class="panel">
-                <div style="font-size: 12px; font-weight: bold; color: var(--accent-color); margin-bottom: 6px;">⚙️ Điều Chỉnh Confidence Threshold Từng Loại Xe:</div>
+                <div style="font-size: 12px; font-weight: bold; margin-bottom: 8px; color: var(--text-color);">
+                    ⚙️ Tinh Chỉnh Mức Nhận Diện (Confidence Threshold) Đề Xuất:
+                </div>
                 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 6px;">
-                    <div class="slider-group">
-                        <label>🏍️ Motorcycle: <span id="conf-moto-val" style="color:var(--accent-color); font-weight:bold;">0.10</span></label>
-                        <input type="range" id="conf-moto-slider" min="0.01" max="0.8" step="0.01" value="0.10">
+                <div class="slider-group">
+                    <label>🏍️ Motorcycle (Xe máy - Khuyến nghị thấp để bắt xe nhỏ/xa): <span id="conf-moto-val" style="float: right; color: var(--accent-color); font-weight: bold;">0.10</span></label>
+                    <input type="range" id="conf-moto-slider" min="0.01" max="0.9" step="0.01" value="0.10">
+                </div>
+                <div class="slider-group">
+                    <label>🚗 Car (Ô tô - Khuyến nghị cân bằng): <span id="conf-car-val" style="float: right; color: var(--accent-color); font-weight: bold;">0.35</span></label>
+                    <input type="range" id="conf-car-slider" min="0.05" max="0.9" step="0.01" value="0.35">
+                </div>
+                <div class="slider-group">
+                    <label>🚌 Bus (Xe khách - Khuyến nghị cao tránh nhầm ô tô): <span id="conf-bus-val" style="float: right; color: var(--accent-color); font-weight: bold;">0.40</span></label>
+                    <input type="range" id="conf-bus-slider" min="0.05" max="0.9" step="0.01" value="0.40">
+                </div>
+                <div class="slider-group">
+                    <label>🚚 Truck (Xe tải - Khuyến nghị cao nhất để lọc bỏ lỗi xa): <span id="conf-truck-val" style="float: right; color: var(--accent-color); font-weight: bold;">0.45</span></label>
+                    <input type="range" id="conf-truck-slider" min="0.05" max="0.9" step="0.01" value="0.45">
+                </div>
+
+                <!-- HƯỚNG ĐẾM & VẠCH -->
+                <div style="margin-top: 10px; border-top: 1px solid var(--border-color); padding-top: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="flex: 1; margin-right: 10px;">
+                            <label style="font-size: 11px; display: block; margin-bottom: 3px;">Hướng đếm phương tiện:</label>
+                            <select id="counting-direction" style="width: 100%; background: #0b132b; color: #fff; border: 1px solid var(--border-color); padding: 5px; border-radius: 4px; font-size: 11px;">
+                                <option value="both">🌐 Đếm Cả 2 Chiều (Lên & Xuống)</option>
+                                <option value="down">⬇️ Chỉ từ Trên xuống Dưới</option>
+                                <option value="up">⬆️ Chỉ từ Dưới lên Trên</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; gap: 5px; align-items: flex-end; padding-top: 16px;">
+                            <button id="btn-toggle-line" class="btn btn-success" style="font-size: 11px; padding: 5px 8px;">Vạch: ON</button>
+                            <button id="btn-reset-line" class="btn btn-info" style="font-size: 11px; padding: 5px 8px;">Reset Vạch Đếm</button>
+                        </div>
                     </div>
-                    <div class="slider-group">
-                        <label>🚗 Car: <span id="conf-car-val" style="color:var(--accent-color); font-weight:bold;">0.35</span></label>
-                        <input type="range" id="conf-car-slider" min="0.05" max="0.9" step="0.01" value="0.35">
-                    </div>
-                    <div class="slider-group">
-                        <label>🚌 Bus: <span id="conf-bus-val" style="color:var(--accent-color); font-weight:bold;">0.40</span></label>
-                        <input type="range" id="conf-bus-slider" min="0.05" max="0.9" step="0.01" value="0.40">
-                    </div>
-                    <div class="slider-group">
-                        <label>🚚 Truck: <span id="conf-truck-val" style="color:var(--accent-color); font-weight:bold;">0.45</span></label>
-                        <input type="range" id="conf-truck-slider" min="0.05" max="0.9" step="0.01" value="0.45">
+                    <div style="font-size: 10px; color: #94a3b8; margin-top: 6px;">
+                        💡 Mẹo: Hệ thống tự động đếm ngay khi vượt qua vạch theo chiều đã chọn. Kéo thả vạch đỏ trực tiếp trên video để thay đổi vị trí.
                     </div>
                 </div>
 
-                <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 6px;">
-                    <div style="flex: 1;">
-                        <label style="font-size: 11px;">Hướng đếm phương tiện:</label>
-                        <select id="counting-direction" style="width: 100%; background: #0b1329; color: #fff; border: 1px solid var(--border-color); padding: 3px; border-radius: 4px; font-size: 11px;">
-                            <option value="both">🌐 Gồm Cả 2 Chiều (Lên & Xuống)</option>
-                            <option value="vertical-down">⬇️ Chỉ từ Trên xuống Dưới</option>
-                            <option value="vertical-up">⬆️ Chỉ từ Dưới lên Trên</option>
-                        </select>
-                    </div>
-                    <div style="display: flex; gap: 4px; align-items: flex-end; padding-top: 14px; padding-left: 6px;">
-                        <button id="btn-toggle-line" class="btn btn-success" style="font-size: 10px; padding: 4px 6px;">Vạch: ON</button>
-                        <button id="btn-reset-line" class="btn btn-info" style="font-size: 10px; padding: 4px 6px;">Reset Vạch</button>
-                    </div>
+                <div style="font-size: 10px; color: #94a3b8; margin-top: 8px; display: flex; justify-content: space-between;">
+                    <span>Đồng hồ hệ thống: <b id="clock" style="color: var(--text-color);">11:12:33</b></span>
                 </div>
             </div>
         </div>
 
-        <!-- Cột phải: Thống kê & Biểu đồ -->
-        <div class="sidebar-section">
+        <!-- CỘT PHẢI -->
+        <div class="right-column">
+            <!-- BẢNG THỐNG KÊ -->
             <div class="panel">
-                <div style="font-size: 12px; font-weight: bold; margin-bottom: 4px; color: var(--accent-color);">📊 Thống Kê Theo Dõi Thời Gian Thực</div>
-                
+                <div style="font-size: 12px; font-weight: bold; margin-bottom: 4px; color: var(--accent-color);">📊 Bảng Thống Kê Phương Tiện</div>
+                <div style="font-size: 11px; margin-bottom: 6px;">
+                    Mật độ giao thông: <span id="density-status" class="density-badge density-low">LOW</span>
+                </div>
+
                 <table class="stat-table">
                     <thead>
                         <tr>
-                            <th>Loại Xe</th>
+                            <th>Loại xe</th>
                             <th>Trái</th>
                             <th>Phải</th>
                             <th>Tổng</th>
@@ -251,56 +246,69 @@
                             <td>🚗 Car</td>
                             <td id="count-car-left">0</td>
                             <td id="count-car-right">0</td>
-                            <td id="count-car" style="font-weight:bold;">0</td>
+                            <td id="count-car">0</td>
                         </tr>
                         <tr>
-                            <td>🏍️ Moto</td>
+                            <td>🏍️ Motorcycle</td>
                             <td id="count-moto-left">0</td>
                             <td id="count-moto-right">0</td>
-                            <td id="count-moto" style="font-weight:bold;">0</td>
+                            <td id="count-moto">0</td>
                         </tr>
                         <tr>
                             <td>🚌 Bus</td>
                             <td id="count-bus-left">0</td>
                             <td id="count-bus-right">0</td>
-                            <td id="count-bus" style="font-weight:bold;">0</td>
+                            <td id="count-bus">0</td>
                         </tr>
                         <tr>
                             <td>🚚 Truck</td>
                             <td id="count-truck-left">0</td>
                             <td id="count-truck-right">0</td>
-                            <td id="count-truck" style="font-weight:bold;">0</td>
+                            <td id="count-truck">0</td>
                         </tr>
-                        <tr style="background-color: #0b1329; font-weight: bold;">
-                            <td>TOTAL</td>
-                            <td id="count-left-total">0</td>
-                            <td id="count-right-total">0</td>
+                        <tr style="font-weight: bold; background: #0b132b;">
+                            <td>TỔNG CỘNG</td>
+                            <td id="count-left-total" style="color: var(--accent-color);">0</td>
+                            <td id="count-right-total" style="color: var(--accent-color);">0</td>
                             <td id="count-total" style="color: var(--accent-color);">0</td>
                         </tr>
                     </tbody>
                 </table>
 
-                <div id="congestion-banner" class="congestion-banner normal">
+                <div id="congestion-banner" style="margin-top: 8px; padding: 6px; text-align: center; font-weight: bold; border-radius: 4px; font-size: 11px; background: #16a34a; color: white;">
                     ✓ TRAFFIC NORMAL
                 </div>
             </div>
 
+            <!-- BIỂU ĐỒ -->
             <div class="panel" style="flex-grow: 1; display: flex; flex-direction: column;">
-                <div style="font-size: 12px; font-weight: bold; margin-bottom: 4px; color: var(--accent-color);">📈 Biểu Đồ Thống Kê (Trái / Phải)</div>
-                <div style="position: relative; flex-grow: 1; min-height: 160px;">
+                <div style="font-size: 12px; font-weight: bold; margin-bottom: 4px; color: var(--accent-color);">📈 Biểu Đồ Phân Bố</div>
+                <div style="position: relative; flex-grow: 1; min-height: 200px;">
                     <canvas id="trafficChart"></canvas>
                 </div>
             </div>
 
-            <div class="panel" style="font-size: 11px;">
-                <div style="font-weight: bold; color: var(--accent-color); margin-bottom: 2px;">ℹ️ Thông Tin Phân Tích & Hệ Thống</div>
-                <div>Trạng thái Tracking: <b>Optimized Centroid Tracker + ID Persistence</b></div>
-                <div>Lọc nhiễu vùng camera: <span style="color: #16a34a; font-weight: bold;">Đã bật (Sky Mask Active)</span></div>
+            <!-- THÔNG TIN HỆ THỐNG (CHUẨN ẢNH 4) -->
+            <div class="panel">
+                <div style="font-size: 12px; font-weight: bold; color: var(--accent-color); margin-bottom: 6px;">⚙️ Thông Tin Phân Tích & Hệ Thống</div>
+                
+                <div style="display: flex; justify-content: space-between; font-size: 11px; padding: 4px 0; border-bottom: 1px solid #1e293b;">
+                    <span>Trạng thái Tracking:</span>
+                    <b style="color: var(--text-color);">Centroid Tracker (ID-based Counting)</b>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 11px; padding: 4px 0;">
+                    <span>Độ phân giải AI:</span>
+                    <b style="color: var(--text-color);">Enhanced 640x640 Resolution</b>
+                </div>
+
+                <div class="info-box">
+                    ⚠️ <b>Lưu ý Threshold:</b><br>
+                    Confidence Threshold hoạt động chuẩn theo slider chỉnh tay
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Nhúng mã nguồn JS xử lý -->
     <script src="script.js"></script>
 </body>
 </html>
