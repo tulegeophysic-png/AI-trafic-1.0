@@ -1,12 +1,12 @@
 let session = null;
 let isRunning = false;
 
-// Ngưỡng Confidence riêng biệt cho từng loại xe (đã tối ưu hoá)
+// Thiết lập Confidence Threshold riêng biệt (Tối ưu hóa sẵn sàng)
 let classConfidenceThresholds = {
-    'motorcycle': 0.10, // Xe máy nhỏ, giữ ngưỡng thấp để bắt xe xa
-    'car': 0.35,        // Ô tô con
+    'motorcycle': 0.10, // Xe máy: giữ thấp để bám bắt xe ở xa
+    'car': 0.35,        // Ô tô con: cân bằng chuẩn xác
     'bus': 0.40,        // Xe khách lớn
-    'truck': 0.45       // Xe tải, ngưỡng cao để lọc triệt để lỗi nhận diện nhầm
+    'truck': 0.45       // Xe tải: ngưỡng cao để loại bỏ hoàn toàn hiện tượng nhận diện nhầm xa
 };
 
 let videoElement = document.getElementById('video-source');
@@ -44,7 +44,7 @@ setInterval(() => {
     if (clockEl) clockEl.innerText = now.toTimeString().split(' ')[0];
 }, 1000);
 
-// --- GẮN KẾT SỰ KIỆN GIAO DIỆN ---
+// --- GẮN KẾT SỰ KIỆN GIAO DIỆN KHI DOM SẴN SÀNG ---
 document.addEventListener('DOMContentLoaded', () => {
     const btnStart = document.getElementById('btn-start');
     if (btnStart) btnStart.addEventListener('click', startAI);
@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnResetLine = document.getElementById('btn-reset-line');
     if (btnResetLine) btnResetLine.addEventListener('click', resetLinePosition);
 
-    // Lắng nghe sự kiện thay đổi của 4 thanh trượt confidence riêng biệt
+    // Lắng nghe thay đổi của 4 thanh trượt confidence riêng biệt
     setupSlider('conf-moto-slider', 'motorcycle', 'conf-moto-val');
     setupSlider('conf-car-slider', 'car', 'conf-car-val');
     setupSlider('conf-bus-slider', 'bus', 'conf-bus-val');
@@ -131,8 +131,6 @@ if (uploadInput) {
         const file = e.target.files[0];
         if (file) {
             resetSystemDataOnly();
-            const fileNameEl = document.getElementById('file-name');
-            if (fileNameEl) fileNameEl.innerText = file.name;
             videoElement.src = URL.createObjectURL(file);
             videoElement.load();
             videoElement.onloadedmetadata = function() {
@@ -167,10 +165,10 @@ function initChart() {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
-                y: { beginAtZero: true, grid: { color: '#1e293b' }, ticks: { color: '#f8fafc', font: { size: 10 } } },
-                x: { grid: { display: false }, ticks: { color: '#f8fafc', font: { size: 10 } } }
+                y: { beginAtZero: true, grid: { color: '#1f293d' }, ticks: { color: '#f8fafc', font: { size: 9 } } },
+                x: { grid: { display: false }, ticks: { color: '#f8fafc', font: { size: 9 } } }
             },
-            plugins: { legend: { labels: { color: '#f8fafc', font: { size: 10 } } } }
+            plugins: { legend: { labels: { color: '#f8fafc', font: { size: 9 } } } }
         }
     });
 }
@@ -226,7 +224,7 @@ function startAI() {
     if (stopBtn) stopBtn.disabled = false;
     if (capBtn) capBtn.disabled = false;
 
-    setStatus('active', 'AI RUNNING');
+    setStatus('active', 'RUNNING');
     requestAnimationFrame(processFrame);
 }
 
@@ -241,7 +239,7 @@ function stopAI() {
     if (stopBtn) stopBtn.disabled = true;
     if (capBtn) capBtn.disabled = true;
 
-    setStatus('stopped', 'AI STOPPED');
+    setStatus('stopped', 'STOPPED');
 }
 
 function resetSystemDataOnly() {
@@ -370,7 +368,7 @@ function parseYolov10Output(output, origWidth, origHeight, ratio, dw, dh) {
 
         const className = classMap[clsId];
         if (className) {
-            // Lấy ngưỡng confidence riêng biệt tương ứng với loại phương tiện
+            // Lọc theo ngưỡng confidence độc lập từng loại phương tiện
             const specificThreshold = classConfidenceThresholds[className] || 0.25;
 
             if (conf >= specificThreshold) {
@@ -467,8 +465,8 @@ function drawDetectionsAndLine(vehicles) {
         ctx.stroke();
 
         ctx.fillStyle = isDraggingLine ? '#38bdf8' : '#ef4444';
-        ctx.font = 'bold 15px Segoe UI';
-        ctx.fillText(`VẠCH GIÁM SÁT (ĐÃ KÍCH HOẠT TỰ ĐỘNG ĐẾM THEO ID)`, 30, lineCoord - 12);
+        ctx.font = 'bold 14px Segoe UI';
+        ctx.fillText(`VẠCH GIÁM SÁT KÉO THẢ`, 20, lineCoord - 10);
     }
 
     if (vehicles && vehicles.length > 0) {
@@ -481,11 +479,11 @@ function drawDetectionsAndLine(vehicles) {
             ctx.strokeRect(x, y, w, h);
 
             ctx.fillStyle = color;
-            ctx.fillRect(x, y > 20 ? y - 20 : 0, 130, 20);
+            ctx.fillRect(x, y > 20 ? y - 20 : 0, 120, 18);
 
             ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 11px Segoe UI';
-            ctx.fillText(`${veh.className.toUpperCase()} #${veh.id} (${(veh.confidence*100).toFixed(0)}%)`, x + 4, y > 20 ? y - 6: 14);
+            ctx.font = 'bold 10px Segoe UI';
+            ctx.fillText(`${veh.className.toUpperCase()} #${veh.id} (${(veh.confidence*100).toFixed(0)}%)`, x + 3, y > 20 ? y - 6: 12);
         });
     }
 }
