@@ -86,24 +86,29 @@ function toggleCountingLineUI() {
     drawScene(latestDetections);
 }
 
-canvas.addEventListener('mousedown', (e) => {
+canvas.addEventListener('pointerdown', (e) => {
     if (!enableCountingLine) return;
     const rect = canvas.getBoundingClientRect();
     const scaleY = canvas.height / rect.height;
     const mouseY = (e.clientY - rect.top) * scaleY;
     const lineY = canvas.height * lineConfig.positionRatio;
-    if (Math.abs(mouseY - lineY) < 40) isDraggingLine = true;
+    if (Math.abs(mouseY - lineY) < 40) {
+        isDraggingLine = true;
+        canvas.setPointerCapture(e.pointerId);
+    }
 });
 
-window.addEventListener('mousemove', (e) => {
+window.addEventListener('pointermove', (e) => {
     if (!isDraggingLine || !enableCountingLine) return;
     const rect = canvas.getBoundingClientRect();
     const scaleY = canvas.height / rect.height;
     const mouseY = (e.clientY - rect.top) * scaleY;
     lineConfig.positionRatio = Math.max(0.05, Math.min(0.95, mouseY / canvas.height));
+    drawScene(latestDetections);
 });
 
-window.addEventListener('mouseup', () => { isDraggingLine = false; });
+window.addEventListener('pointerup', () => { isDraggingLine = false; });
+window.addEventListener('pointercancel', () => { isDraggingLine = false; });
 function resetLinePosition() {
     lineConfig.positionRatio = 0.35;
     drawScene(latestDetections);
@@ -114,6 +119,7 @@ if (uploadInput) {
     uploadInput.addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (file) {
+            if (isRunning) stopAI();
             resetSystemDataOnly();
             if (videoObjectUrl) URL.revokeObjectURL(videoObjectUrl);
             videoObjectUrl = URL.createObjectURL(file);
@@ -171,7 +177,9 @@ async function loadModel() {
                 try {
                     session = await ort.InferenceSession.create(f + m, { executionProviders: ['wasm'] });
                     if (session) break;
-                } catch (err) {}
+                } catch (err) {
+                    console.warn(`Không tải được model ${f}${m}:`, err.message);
+                }
             }
             if (session) break;
         }
@@ -404,13 +412,19 @@ function matchAndCountVehicles(detections) {
 
         // Tìm xem xe này có khớp với ID gần đây không
         let assignedId = null;
-        let minD = 180;
+        let bestMatchScore = -Infinity;
+        const maxMatchDistance = Math.max(80, Math.min(canvas.width, canvas.height) * 0.08);
         for (let [id, val] of recentVehicles.entries()) {
             if (!usedIds.has(id) && val.className === det.className) {
-                let dist = Math.hypot(cx - val.cx, cy - val.cy);
-                if (dist < minD) {
-                    minD = dist;
+                const distance = Math.hypot(cx - val.cx, cy - val.cy);
+                const overlap = val.bbox ? calculateIoU(det.bbox, val.bbox) : 0;
+                if (overlap >= 0.05 || distance <= maxMatchDistance) {
+                    const matchScore = overlap * 1000 - distance;
+                    if (matchScore > bestMatchScore) {
+                        bestMatchScore = matchScore;
+                    
                     assignedId = id;
+                    }
                 }
             }
         }
@@ -451,7 +465,7 @@ function matchAndCountVehicles(detections) {
         }
 
         let isCounted = oldData ? oldData.counted : false;
-        recentVehicles.set(assignedId, { cx, cy, className: det.className, counted: isCounted, time: nowTime });
+        recentVehicles.set(assignedId, { cx, cy, bbox: det.bbox, className: det.className, counted: isCounted, time: nowTime });
         activeVehicles.push({ id: assignedId, bbox: [x, y, w, h], className: det.className, confidence: det.confidence });
     });
 
@@ -539,3 +553,7 @@ function captureFrame() {
     link.href = canvas.toDataURL('image/png');
     link.click();
 }
+
+window.addEventListener('beforeunload', () => {
+    if (videoObjectUrl) URL.revokeObjectURL(videoObjectUrl);
+});
