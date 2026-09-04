@@ -404,21 +404,24 @@ function matchAndCountVehicles(detections) {
     const lineY = lineConfig.positionRatio * canvas.height;
     const nowTime = Date.now();
 
-    // Giữ track lâu hơn để tránh cấp ID mới khi model bỏ sót vài frame.
+    // Giữ track đủ lâu khi inference chậm hoặc model bỏ sót vài frame.
     for (let [id, val] of recentVehicles.entries()) {
-        if (nowTime - val.time > 3000) recentVehicles.delete(id);
+        if (nowTime - val.time > 8000) recentVehicles.delete(id);
     }
 
     const orderedDetections = [...detections].sort((first, second) => second.confidence - first.confidence);
     const candidateMatches = [];
-    const maxMatchDistance = Math.max(180, Math.min(canvas.width, canvas.height) * 0.15);
+    const maxMatchDistance = Math.max(220, Math.min(canvas.width, canvas.height) * 0.20);
 
     orderedDetections.forEach((det, detectionIndex) => {
         const [x, y, w, h] = det.bbox;
         const cx = x + w / 2, cy = y + h / 2;
         for (let [id, val] of recentVehicles.entries()) {
             if (val.className === det.className) {
-                const distance = Math.hypot(cx - val.cx, cy - val.cy);
+                const elapsedSeconds = Math.min((nowTime - val.time) / 1000, 1);
+                const predictedX = val.cx + (val.vx || 0) * elapsedSeconds;
+                const predictedY = val.cy + (val.vy || 0) * elapsedSeconds;
+                const distance = Math.hypot(cx - predictedX, cy - predictedY);
                 const overlap = val.bbox ? calculateIoU(det.bbox, val.bbox) : 0;
                 if (overlap >= 0.05 || distance <= maxMatchDistance) {
                     candidateMatches.push({ detectionIndex, id, score: overlap * 1000 - distance });
@@ -479,7 +482,19 @@ function matchAndCountVehicles(detections) {
         }
 
         let isCounted = oldData ? oldData.counted : false;
-        recentVehicles.set(assignedId, { cx, cy, bbox: det.bbox, className: det.className, counted: isCounted, time: nowTime });
+        const elapsedSeconds = oldData ? Math.max((nowTime - oldData.time) / 1000, 0.001) : 0;
+        const velocityX = oldData ? (cx - oldData.cx) / elapsedSeconds : 0;
+        const velocityY = oldData ? (cy - oldData.cy) / elapsedSeconds : 0;
+        recentVehicles.set(assignedId, {
+            cx,
+            cy,
+            bbox: det.bbox,
+            className: det.className,
+            counted: isCounted,
+            time: nowTime,
+            vx: Math.max(-1000, Math.min(1000, velocityX)),
+            vy: Math.max(-1000, Math.min(1000, velocityY))
+        });
         activeVehicles.push({ id: assignedId, bbox: [x, y, w, h], className: det.className, confidence: det.confidence });
     });
 
