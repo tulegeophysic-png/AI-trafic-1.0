@@ -18,9 +18,9 @@ let countsLeft = { car: 0, motorcycle: 0, bus: 0, truck: 0, total: 0 };
 let countsRight = { car: 0, motorcycle: 0, bus: 0, truck: 0, total: 0 };
 let countsTotal = { car: 0, motorcycle: 0, bus: 0, truck: 0, total: 0 };
 
-let previousVehiclePositions = new Map(); 
-let uniqueGlobalId = 1;
-let countedGlobalIds = new Set();
+// Dùng Map lưu lịch sử vị trí ngắn hạn để xét hướng qua vạch
+let recentVehicles = new Map();
+let uniqueIdCounter = 1;
 
 let lineConfig = { positionRatio: 0.35 }; 
 let isDraggingLine = false;
@@ -31,7 +31,7 @@ let frameCount = 0;
 let currentFps = 0;
 let isInferencing = false;
 let enableCountingLine = true; 
-let latestVehicles = [];
+let latestDetections = [];
 
 setInterval(() => {
     const now = new Date();
@@ -112,7 +112,7 @@ if (uploadInput) {
                 canvas.width = videoElement.videoWidth;
                 canvas.height = videoElement.videoHeight;
                 ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-                drawDetectionsAndLine([]);
+                drawScene([]);
                 if (session) {
                     document.getElementById('btn-start').disabled = false;
                     setStatus('ready', 'AI READY');
@@ -203,10 +203,9 @@ function resetSystemDataOnly() {
     countsLeft = { car: 0, motorcycle: 0, bus: 0, truck: 0, total: 0 };
     countsRight = { car: 0, motorcycle: 0, bus: 0, truck: 0, total: 0 };
     countsTotal = { car: 0, motorcycle: 0, bus: 0, truck: 0, total: 0 };
-    previousVehiclePositions.clear();
-    countedGlobalIds.clear();
-    uniqueGlobalId = 1;
-    latestVehicles = [];
+    recentVehicles.clear();
+    uniqueIdCounter = 1;
+    latestDetections = [];
     updateUIStats();
 }
 
@@ -218,7 +217,7 @@ function resetSystem() {
         videoElement.currentTime = 0;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-        drawDetectionsAndLine([]);
+        drawScene([]);
     }
 }
 
@@ -239,7 +238,7 @@ function processFrame() {
     }
 
     ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-    drawDetectionsAndLine(latestVehicles);
+    drawScene(latestDetections);
 
     if (!isInferencing) {
         isInferencing = true;
@@ -248,7 +247,7 @@ function processFrame() {
                 const { tensor, ratio, dw, dh } = preprocessWithLetterbox(canvas, 640);
                 const results = await session.run({ [session.inputNames[0]]: tensor });
                 const dets = parseYolov10Output(results[session.outputNames[0]], canvas.width, canvas.height, ratio, dw, dh);
-                latestVehicles = processCountingAndTracking(dets);
+                latestDetections = matchAndCountVehicles(dets);
                 updateUIStats();
             } catch (err) {} 
             finally { isInferencing = false; }
@@ -314,59 +313,62 @@ function parseYolov10Output(output, origW, origH, ratio, dw, dh) {
             }
         } else if (dims[1] === 6) {
             for (let i = 0; i < dims[2]; i++) {
-                parseBox(data[i], data[dims[2]+i], data[2*dims[2]+i], data[3*dims[2]+i], data[4*dims[2]+i], Math.round(data[5*dims[2]+i]));
+                parseBox(data[i], data[dims[2]+i], data[2*dims[2]+i], data[3*dims[2]+i], data[4*dims[2]+i], data[5*dims[2]+i]);
             }
         }
     }
     return dets;
 }
 
-function processCountingAndTracking(detections) {
-    let currentFrameVehicles = [];
+function matchAndCountVehicles(detections) {
+    let activeVehicles = [];
     const directionMode = document.getElementById('counting-direction').value;
-    const lineCoord = lineConfig.positionRatio * canvas.height;
+    const lineY = lineConfig.positionRatio * canvas.height;
+    const nowTime = Date.now();
+
+    // Dọn dẹp lịch sử cũ hơn 1.5 giây để giải phóng bộ nhớ
+    for (let [id, val] of recentVehicles.entries()) {
+        if (nowTime - val.time > 1500) recentVehicles.delete(id);
+    }
 
     detections.forEach(det => {
         const [x, y, w, h] = det.bbox;
         const cx = x + w / 2, cy = y + h / 2;
 
-        let matchedId = null;
-        let minDist = 250; // Mở rộng vùng tìm kiếm ID để không bị mất vết xe di chuyển từ xa
-        for (let [id, pos] of previousVehiclePositions.entries()) {
-            if (pos.className === det.className) {
-                let dist = Math.hypot(cx - pos.cx, cy - pos.cy);
-                if (dist < minDist) { minDist = dist; matchedId = id; }
+        // Tìm xem xe này có khớp với ID gần đây không
+        let assignedId = null;
+        let minD = 180;
+        for (let [id, val] of recentVehicles.entries()) {
+            if (val.className === det.className) {
+                let dist = Math.hypot(cx - val.cx, cy - val.cy);
+                if (dist < minD) {
+                    minD = dist;
+                    assignedId = id;
+                }
             }
         }
 
-        if (!matchedId) {
-            matchedId = uniqueGlobalId++;
+        if (!assignedId) {
+            assignedId = uniqueIdCounter++;
         }
 
-        let oldPos = previousVehiclePositions.get(matchedId);
-        if (oldPos && enableCountingLine && !countedGlobalIds.has(matchedId)) {
+        let oldData = recentVehicles.get(assignedId);
+
+        // Kiểm tra cắt vạch
+        if (oldData && enableCountingLine && !oldData.counted) {
+            let oldCy = oldData.cy;
             let crossed = false;
-            // Kiểm tra giao nhau qua vạch bằng cả biên trên/dưới của bounding box xe
-            const oldBottom = oldPos.y + oldPos.h;
-            const newBottom = y + h;
 
             if (directionMode === 'both') {
-                if ((oldPos.cy < lineCoord && cy >= lineCoord) || (oldPos.cy > lineCoord && cy <= lineCoord) ||
-                    (oldBottom < lineCoord && newBottom >= lineCoord) || (oldPos.y > lineCoord && y <= lineCoord)) {
-                    crossed = true;
-                }
+                if ((oldCy < lineY && cy >= lineY) || (oldCy > lineY && cy <= lineY)) crossed = true;
             } else if (directionMode === 'down') {
-                if ((oldPos.cy < lineCoord && cy >= lineCoord) || (oldBottom < lineCoord && newBottom >= lineCoord)) {
-                    crossed = true;
-                }
+                if (oldCy < lineY && cy >= lineY) crossed = true;
             } else if (directionMode === 'up') {
-                if ((oldPos.cy > lineCoord && cy <= lineCoord) || (oldPos.y > lineCoord && y <= lineCoord)) {
-                    crossed = true;
-                }
+                if (oldCy > lineY && cy <= lineY) crossed = true;
             }
 
             if (crossed) {
-                countedGlobalIds.add(matchedId);
+                oldData.counted = true;
                 const isLeftSide = cx < (canvas.width / 2);
                 if (isLeftSide) {
                     countsLeft[det.className]++;
@@ -380,13 +382,15 @@ function processCountingAndTracking(detections) {
             }
         }
 
-        previousVehiclePositions.set(matchedId, { cx, cy, y, h, className: det.className });
-        currentFrameVehicles.push({ id: matchedId, bbox: [x, y, w, h], className: det.className, confidence: det.confidence });
+        let isCounted = oldData ? oldData.counted : false;
+        recentVehicles.set(assignedId, { cx, cy, className: det.className, counted: isCounted, time: nowTime });
+        activeVehicles.push({ id: assignedId, bbox: [x, y, w, h], className: det.className, confidence: det.confidence });
     });
-    return currentFrameVehicles;
+
+    return activeVehicles;
 }
 
-function drawDetectionsAndLine(vehicles) {
+function drawScene(vehicles) {
     if (enableCountingLine) {
         const lineY = lineConfig.positionRatio * canvas.height;
         ctx.strokeStyle = isDraggingLine ? '#38bdf8' : '#ef4444';
