@@ -1,7 +1,15 @@
 let session = null;
 let isRunning = false;
 
-let confidenceThreshold = 0.15; 
+// Thiết lập Confidence Threshold riêng biệt cho từng loại xe
+const classConfidenceThresholds = {
+    'motorcycle': 0.08, // Xe máy nhỏ, dễ mờ -> giữ ngưỡng thấp
+    'car': 0.35,        // Ô tô con cần chính xác hơn để tránh nhầm
+    'bus': 0.40,        // Xe khách lớn
+    'truck': 0.45       // Xe tải cần ngưỡng cao để loại bỏ hoàn toàn lỗi nhận diện nhầm
+};
+
+let confidenceThreshold = 0.15; // Ngưỡng mặc định chung nếu dùng thanh trượt
 let videoElement = document.getElementById('video-source');
 let canvas = document.getElementById('canvas');
 let ctx = canvas.getContext('2d');
@@ -39,15 +47,12 @@ setInterval(() => {
 
 // --- GẮN KẾT SỰ KIỆN TOÀN BỘ GIAO DIỆN KHI DOM SẴN SÀNG ---
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. Nút Start AI
     const btnStart = document.getElementById('btn-start');
     if (btnStart) btnStart.addEventListener('click', startAI);
 
-    // 2. Nút Stop AI
     const btnStop = document.getElementById('btn-stop');
     if (btnStop) btnStop.addEventListener('click', stopAI);
 
-    // 3. Nút Reset Hệ Thống (Đã sửa hoạt động 100%)
     const btnReset = document.getElementById('btn-reset');
     if (btnReset) {
         btnReset.addEventListener('click', () => {
@@ -56,19 +61,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // 4. Nút Capture Khung Hình
     const btnCapture = document.getElementById('btn-capture');
     if (btnCapture) btnCapture.addEventListener('click', captureFrame);
 
-    // 5. Nút Bật/Tắt Vạch Đếm
     const btnToggleLine = document.getElementById('btn-toggle-line');
     if (btnToggleLine) btnToggleLine.addEventListener('click', toggleCountingLineUI);
 
-    // 6. Nút Reset Vạch Đếm
     const btnResetLine = document.getElementById('btn-reset-line');
     if (btnResetLine) btnResetLine.addEventListener('click', resetLinePosition);
 
-    // 7. Thanh trượt Confidence
     const confSlider = document.getElementById('conf-slider');
     if (confSlider) {
         confSlider.addEventListener('input', (e) => {
@@ -76,7 +77,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Khởi tạo biểu đồ thống kê ban đầu
     initChart();
     loadModel();
 });
@@ -369,14 +369,18 @@ function parseYolov10Output(output, origWidth, origHeight, ratio, dw, dh) {
 
         if (boxW < 2 || boxH < 2) return; 
 
-        let effectiveThreshold = Math.min(confidenceThreshold, 0.05);
+        const className = classMap[clsId];
+        if (className) {
+            // Lấy ngưỡng riêng theo từng loại xe (nếu không có trong bảng, mặc định lấy 0.25)
+            const specificThreshold = classConfidenceThresholds[className] || 0.25;
 
-        if (conf >= effectiveThreshold && classMap[clsId]) {
-            dets.push({
-                bbox: [rx1, ry1, boxW, boxH],
-                className: classMap[clsId],
-                confidence: conf
-            });
+            if (conf >= specificThreshold) {
+                dets.push({
+                    bbox: [rx1, ry1, boxW, boxH],
+                    className: className,
+                    confidence: conf
+                });
+            }
         }
     };
 
