@@ -2,7 +2,7 @@ let session = null;
 let isRunning = false;
 
 let classConfidenceThresholds = {
-    'motorcycle': 0.10,
+    'motorcycle': 0.02,
     'car': 0.35,
     'bus': 0.40,
     'truck': 0.45
@@ -331,7 +331,7 @@ function processCountingAndTracking(detections) {
         const cx = x + w / 2, cy = y + h / 2;
 
         let matchedId = null;
-        let minDist = 120;
+        let minDist = 250; // Mở rộng vùng tìm kiếm ID để không bị mất vết xe di chuyển từ xa
         for (let [id, pos] of previousVehiclePositions.entries()) {
             if (pos.className === det.className) {
                 let dist = Math.hypot(cx - pos.cx, cy - pos.cy);
@@ -346,12 +346,23 @@ function processCountingAndTracking(detections) {
         let oldPos = previousVehiclePositions.get(matchedId);
         if (oldPos && enableCountingLine && !countedGlobalIds.has(matchedId)) {
             let crossed = false;
+            // Kiểm tra giao nhau qua vạch bằng cả biên trên/dưới của bounding box xe
+            const oldBottom = oldPos.y + oldPos.h;
+            const newBottom = y + h;
+
             if (directionMode === 'both') {
-                if ((oldPos.cy < lineCoord && cy >= lineCoord) || (oldPos.cy > lineCoord && cy <= lineCoord)) crossed = true;
+                if ((oldPos.cy < lineCoord && cy >= lineCoord) || (oldPos.cy > lineCoord && cy <= lineCoord) ||
+                    (oldBottom < lineCoord && newBottom >= lineCoord) || (oldPos.y > lineCoord && y <= lineCoord)) {
+                    crossed = true;
+                }
             } else if (directionMode === 'down') {
-                if (oldPos.cy < lineCoord && cy >= lineCoord) crossed = true;
+                if ((oldPos.cy < lineCoord && cy >= lineCoord) || (oldBottom < lineCoord && newBottom >= lineCoord)) {
+                    crossed = true;
+                }
             } else if (directionMode === 'up') {
-                if (oldPos.cy > lineCoord && cy <= lineCoord) crossed = true;
+                if ((oldPos.cy > lineCoord && cy <= lineCoord) || (oldPos.y > lineCoord && y <= lineCoord)) {
+                    crossed = true;
+                }
             }
 
             if (crossed) {
@@ -369,7 +380,7 @@ function processCountingAndTracking(detections) {
             }
         }
 
-        previousVehiclePositions.set(matchedId, { cx, cy, className: det.className });
+        previousVehiclePositions.set(matchedId, { cx, cy, y, h, className: det.className });
         currentFrameVehicles.push({ id: matchedId, bbox: [x, y, w, h], className: det.className, confidence: det.confidence });
     });
     return currentFrameVehicles;
